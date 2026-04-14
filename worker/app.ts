@@ -159,7 +159,10 @@ export function createWorkerApp(routes: WorkerRoute[] = []): WorkerApp {
 
         return response;
       } catch (error) {
-        const response = Response.json({ error: 'Internal server error.' }, { status: 500 });
+        const response = Response.json({ 
+          error: 'Internal server error.', 
+          details: error instanceof Error ? error.message : String(error)
+        }, { status: 500 });
         response.headers.set('x-request-id', logContext.requestId);
         logRequestEnd(
           logContext,

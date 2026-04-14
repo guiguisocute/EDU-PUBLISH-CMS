@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import MDEditor from '@uiw/react-md-editor';
 import type {
   CardDocument,
   NoticeAttachment,
@@ -66,7 +67,7 @@ function buildInlineErrors(card: CardDocument | null, attachmentRows: Attachment
       severity: 'error',
       filePath: card.path,
       fieldPath: 'id',
-      message: 'ID is required.',
+      message: '【ID】 不能为空。',
     });
   }
 
@@ -75,7 +76,7 @@ function buildInlineErrors(card: CardDocument | null, attachmentRows: Attachment
       severity: 'error',
       filePath: card.path,
       fieldPath: 'title',
-      message: 'Title is required.',
+      message: '【标题】 不能为空。',
     });
   }
 
@@ -84,7 +85,7 @@ function buildInlineErrors(card: CardDocument | null, attachmentRows: Attachment
       severity: 'error',
       filePath: card.path,
       fieldPath: 'school_slug',
-      message: 'School slug is required.',
+      message: '【学院别名 (Slug)】 不能为空。',
     });
   }
 
@@ -95,7 +96,7 @@ function buildInlineErrors(card: CardDocument | null, attachmentRows: Attachment
       severity: 'error',
       filePath: card.path,
       fieldPath: 'published',
-      message: 'Published must be a valid date.',
+      message: '【发布时间】 必须是一个有效的日期。',
     });
   }
 
@@ -107,7 +108,7 @@ function buildInlineErrors(card: CardDocument | null, attachmentRows: Attachment
       severity: 'error',
       filePath: card.path,
       fieldPath: 'start_at',
-      message: 'Start time must be a valid date.',
+      message: '【开始时间】 必须是一个有效的日期。',
     });
   }
 
@@ -196,7 +197,7 @@ function toAttachmentInputs(rows: AttachmentRow[]): NoticeAttachment[] {
 
 function renderMessages(messages: string[]) {
   return messages.map((message) => (
-    <p key={message} className="cms-card-editor__message">
+    <p key={message} className="text-[11px] font-semibold text-destructive mt-1">
       {message}
     </p>
   ));
@@ -224,25 +225,28 @@ export function CardEditorPanel({
 
   if (!card) {
     return (
-      <section className="cms-card-editor cms-card-editor--empty">
-        <h2>Card Editor</h2>
-        <p>Select a card to start editing.</p>
+      <section className="flex flex-col items-center justify-center p-8 text-center bg-muted/5 h-full min-h-[400px]">
+        <h2 className="text-xl font-bold mb-2">Card Editor</h2>
+        <p className="text-muted-foreground text-sm">Select a card to start editing.</p>
       </section>
     );
   }
 
   return (
-    <section className="cms-card-editor" aria-label="Card editor panel">
-      <header className="cms-card-editor__header">
-        <p className="cms-card-editor__eyebrow">Single-layer Card Editor</p>
-        <h2>{String(card.data.title ?? '').trim() || card.id || 'Untitled card'}</h2>
-        <p className="cms-card-editor__meta">{card.path}</p>
+    <section className="flex flex-col gap-6 p-6 lg:p-10 w-full animate-in fade-in duration-300" aria-label="Card editor panel">
+      <header className="border-b border-muted-foreground/10 pb-6 mb-2">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="flex items-center justify-center bg-primary/10 text-primary h-6 px-2 rounded font-bold text-[10px] tracking-wider uppercase ring-1 ring-primary/20">内容编辑器</span>
+          <p className="text-xs text-muted-foreground font-mono bg-muted/40 px-2 py-0.5 rounded border">{card.path}</p>
+        </div>
+        <h2 className="text-3xl font-black tracking-tight text-foreground">{String(card.data.title ?? '').trim() || card.id || '无标题记录'}</h2>
       </header>
 
-      <div className="cms-card-editor__grid">
-        <label>
-          <span>ID</span>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5 bg-card border rounded-xl p-6 shadow-sm">
+        <label className="flex flex-col gap-2">
+          <span className="text-xs font-bold text-muted-foreground/80 uppercase tracking-widest">ID (标识) *</span>
           <input
+            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             aria-label="ID"
             type="text"
             value={String(card.data.id ?? '')}
@@ -251,9 +255,10 @@ export function CardEditorPanel({
           {renderMessages(fieldMessages(mergedIssues, 'id'))}
         </label>
 
-        <label>
-          <span>School Slug</span>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-bold text-muted-foreground">学院别名 (School Slug)</span>
           <input
+            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             aria-label="School Slug"
             type="text"
             value={String(card.data.school_slug ?? '')}
@@ -262,9 +267,10 @@ export function CardEditorPanel({
           {renderMessages(fieldMessages(mergedIssues, 'school_slug'))}
         </label>
 
-        <label className="cms-card-editor__field cms-card-editor__field--full">
-          <span>Title</span>
+        <label className="flex flex-col gap-1.5 md:col-span-2">
+          <span className="text-xs font-bold text-muted-foreground">标题 (Title)</span>
           <input
+            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             aria-label="Title"
             type="text"
             value={String(card.data.title ?? '')}
@@ -273,18 +279,20 @@ export function CardEditorPanel({
           {renderMessages(fieldMessages(mergedIssues, 'title'))}
         </label>
 
-        <label className="cms-card-editor__field cms-card-editor__field--full">
-          <span>Description</span>
+        <label className="flex flex-col gap-1.5 md:col-span-2">
+          <span className="text-xs font-bold text-muted-foreground">描述 (Description)</span>
           <textarea
+            className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             aria-label="Description"
             value={String(card.data.description ?? '')}
             onChange={(event) => onFieldChange('description', event.target.value)}
           />
         </label>
 
-        <label>
-          <span>Published</span>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-bold text-muted-foreground">发布时间 (Published)</span>
           <input
+            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             aria-label="Published"
             type="text"
             value={String(card.data.published ?? '')}
@@ -293,9 +301,10 @@ export function CardEditorPanel({
           {renderMessages(fieldMessages(mergedIssues, 'published'))}
         </label>
 
-        <label>
-          <span>Category</span>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-bold text-muted-foreground">分类 (Category)</span>
           <input
+            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             aria-label="Category"
             type="text"
             value={String(card.data.category ?? '')}
@@ -303,9 +312,10 @@ export function CardEditorPanel({
           />
         </label>
 
-        <label className="cms-card-editor__field cms-card-editor__field--full">
-          <span>Tags</span>
+        <label className="flex flex-col gap-1.5 md:col-span-2">
+          <span className="text-xs font-bold text-muted-foreground">标签 (Tags)</span>
           <input
+            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             aria-label="Tags"
             type="text"
             value={toTagsString(card.data.tags)}
@@ -321,19 +331,21 @@ export function CardEditorPanel({
           />
         </label>
 
-        <label className="cms-card-editor__checkbox">
+        <label className="flex items-center gap-2 md:col-span-2 mt-2">
           <input
+            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
             aria-label="Pinned"
             type="checkbox"
             checked={Boolean(card.data.pinned ?? card.data.pined)}
             onChange={(event) => onFieldChange('pinned', event.target.checked)}
           />
-          <span>Pinned</span>
+          <span className="text-sm font-semibold select-none">置顶 (Pinned)</span>
         </label>
 
-        <label>
-          <span>Cover</span>
+        <label className="flex flex-col gap-1.5 md:col-span-2 mt-4">
+          <span className="text-xs font-bold text-muted-foreground">封面图片链接 (Cover Image URL)</span>
           <input
+            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             aria-label="Cover"
             type="text"
             value={String(card.data.cover ?? '')}
@@ -341,9 +353,10 @@ export function CardEditorPanel({
           />
         </label>
 
-        <label>
-          <span>Badge</span>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-bold text-muted-foreground">徽章 (Badge)</span>
           <input
+            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             aria-label="Badge"
             type="text"
             value={String(card.data.badge ?? '')}
@@ -351,9 +364,10 @@ export function CardEditorPanel({
           />
         </label>
 
-        <label>
-          <span>Extra URL</span>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-bold text-muted-foreground">专属外链 (Extra URL)</span>
           <input
+            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             aria-label="Extra URL"
             type="text"
             value={String(card.data.extra_url ?? '')}
@@ -361,9 +375,10 @@ export function CardEditorPanel({
           />
         </label>
 
-        <label>
-          <span>Start At</span>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-bold text-muted-foreground">开始时间 (Start At)</span>
           <input
+            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             aria-label="Start At"
             type="text"
             value={String(card.data.start_at ?? '')}
@@ -372,9 +387,10 @@ export function CardEditorPanel({
           {renderMessages(fieldMessages(mergedIssues, 'start_at'))}
         </label>
 
-        <label>
-          <span>End At</span>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-bold text-muted-foreground">结束时间 (End At)</span>
           <input
+            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             aria-label="End At"
             type="text"
             value={String(card.data.end_at ?? '')}
@@ -383,9 +399,10 @@ export function CardEditorPanel({
           {renderMessages(fieldMessages(mergedIssues, 'end_at'))}
         </label>
 
-        <label>
-          <span>Source Channel</span>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-bold text-muted-foreground">来源渠道 (Source Channel)</span>
           <input
+            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             aria-label="Source Channel"
             type="text"
             value={String(card.data.source?.channel ?? '')}
@@ -393,9 +410,10 @@ export function CardEditorPanel({
           />
         </label>
 
-        <label>
-          <span>Source Sender</span>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-bold text-muted-foreground">来源作者 (Source Sender)</span>
           <input
+            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             aria-label="Source Sender"
             type="text"
             value={String(card.data.source?.sender ?? '')}
@@ -404,114 +422,137 @@ export function CardEditorPanel({
         </label>
       </div>
 
-      <section className="cms-card-editor__attachments">
-        <div className="cms-card-editor__section-header">
-          <h3>Attachments</h3>
-          <button
-            type="button"
-            onClick={() => {
-              const nextRows = [...attachmentRows, { name: '', url: '', type: '' }];
-              setAttachmentRows(nextRows);
-              onFieldChange('attachments', toAttachmentInputs(nextRows));
-            }}
-          >
-            Add Attachment
-          </button>
-          <label>
-            <span className="sr-only">Upload Attachments</span>
-            <input
-              aria-label="Upload Attachments"
-              type="file"
-              multiple
-              onChange={(event) => {
-                const nextFiles = event.currentTarget.files;
-
-                if (!nextFiles || nextFiles.length === 0) {
-                  return;
-                }
-
-                const uploadedRows = Array.from(nextFiles).map((file) => ({
-                  name: file.name,
-                  url: `./attachments/${file.name}`,
-                  type: '',
-                }));
-                const nextRows = [...attachmentRows, ...uploadedRows];
-
+      <section className="mt-8 border rounded-xl overflow-hidden bg-muted/10">
+        <div className="bg-muted/40 border-b px-4 py-3 flex items-center justify-between">
+          <h3 className="font-bold text-sm">相关附件 (Attachments)</h3>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="h-8 px-3 rounded-md border bg-background text-xs font-semibold shadow-sm hover:bg-muted transition-colors"
+              onClick={() => {
+                const nextRows = [...attachmentRows, { name: '', url: '', type: '' }];
                 setAttachmentRows(nextRows);
-                void onUploadAttachmentFiles?.(nextFiles);
-                event.currentTarget.value = '';
+                onFieldChange('attachments', toAttachmentInputs(nextRows));
               }}
-            />
-          </label>
+            >
+              添加链接
+            </button>
+            <label className="cursor-pointer h-8 px-3 rounded-md bg-primary text-primary-foreground text-xs font-semibold shadow flex items-center hover:opacity-90 transition-opacity">
+              <span className="sr-only">上传附件</span>
+              <span>上传本地文件</span>
+              <input
+                aria-label="Upload Attachments"
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(event) => {
+                  const nextFiles = event.currentTarget.files;
+
+                  if (!nextFiles || nextFiles.length === 0) {
+                    return;
+                  }
+
+                  const uploadedRows = Array.from(nextFiles).map((file) => ({
+                    name: file.name,
+                    url: `./attachments/${file.name}`,
+                    type: '',
+                  }));
+                  const nextRows = [...attachmentRows, ...uploadedRows];
+
+                  setAttachmentRows(nextRows);
+                  void onUploadAttachmentFiles?.(nextFiles);
+                  event.currentTarget.value = '';
+                }}
+              />
+            </label>
+          </div>
         </div>
 
-        {attachmentRows.length === 0 ? (
-          <p className="cms-card-editor__empty-copy">No attachments yet.</p>
-        ) : (
-          attachmentRows.map((attachment, index) => (
-            <div key={`${card.id}-attachment-${index}`} className="cms-card-editor__attachment-row">
-              <label>
-                <span>Attachment Name {index + 1}</span>
-                <input
-                  aria-label={`Attachment Name ${index + 1}`}
-                  type="text"
-                  value={attachment.name}
-                  onChange={(event) => {
-                    const nextRows = updateAttachmentRows(
-                      attachmentRows,
-                      index,
-                      'name',
-                      event.target.value,
-                    );
-                    setAttachmentRows(nextRows);
-                    onFieldChange('attachments', toAttachmentInputs(nextRows));
-                  }}
-                />
-              </label>
+        <div className="p-4 flex flex-col gap-4">
+          {attachmentRows.length === 0 ? (
+            <p className="text-center py-6 text-sm text-muted-foreground font-semibold">暂无附件</p>
+          ) : (
+            attachmentRows.map((attachment, index) => (
+              <div key={`${card.id}-attachment-${index}`} className="flex flex-col gap-3 p-4 bg-background border rounded-lg shadow-sm">
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-xs font-black uppercase text-primary">附件 {index + 1}</span>
+                  <button
+                    type="button"
+                    className="text-xs text-destructive hover:underline font-semibold"
+                    onClick={() => {
+                      const nextRows = attachmentRows.filter((_, rowIndex) => rowIndex !== index);
+                      setAttachmentRows(nextRows);
+                      onFieldChange('attachments', toAttachmentInputs(nextRows));
+                    }}
+                  >
+                    删除
+                  </button>
+                </div>
+                
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-xs font-bold text-muted-foreground">名称 (Name)</span>
+                  <input
+                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    aria-label={`Attachment Name ${index + 1}`}
+                    type="text"
+                    value={attachment.name}
+                    onChange={(event) => {
+                      const nextRows = updateAttachmentRows(
+                        attachmentRows,
+                        index,
+                        'name',
+                        event.target.value,
+                      );
+                      setAttachmentRows(nextRows);
+                      onFieldChange('attachments', toAttachmentInputs(nextRows));
+                    }}
+                  />
+                </label>
 
-              <label>
-                <span>Attachment URL {index + 1}</span>
-                <input
-                  aria-label={`Attachment URL ${index + 1}`}
-                  type="text"
-                  value={attachment.url}
-                  onChange={(event) => {
-                    const nextRows = updateAttachmentRows(
-                      attachmentRows,
-                      index,
-                      'url',
-                      event.target.value,
-                    );
-                    setAttachmentRows(nextRows);
-                    onFieldChange('attachments', toAttachmentInputs(nextRows));
-                  }}
-                />
-              </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-xs font-bold text-muted-foreground">URL 地址</span>
+                  <input
+                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    aria-label={`Attachment URL ${index + 1}`}
+                    type="text"
+                    value={attachment.url}
+                    onChange={(event) => {
+                      const nextRows = updateAttachmentRows(
+                        attachmentRows,
+                        index,
+                        'url',
+                        event.target.value,
+                      );
+                      setAttachmentRows(nextRows);
+                      onFieldChange('attachments', toAttachmentInputs(nextRows));
+                    }}
+                  />
+                </label>
+              </div>
+            ))
+          )}
 
-              <button
-                type="button"
-                onClick={() => {
-                  const nextRows = attachmentRows.filter((_, rowIndex) => rowIndex !== index);
-                  setAttachmentRows(nextRows);
-                  onFieldChange('attachments', toAttachmentInputs(nextRows));
-                }}
-              >
-                Remove Attachment {index + 1}
-              </button>
-            </div>
-          ))
-        )}
-
-        {renderMessages(attachmentMessages(mergedIssues))}
+          {renderMessages(attachmentMessages(mergedIssues))}
+        </div>
       </section>
 
-      <label className="cms-card-editor__field cms-card-editor__field--full">
-        <span>Markdown Body</span>
-        <textarea
-          aria-label="Markdown Body"
-          value={card.bodyMarkdown}
-          onChange={(event) => onBodyChange(event.target.value)}
-        />
+      <label className="flex flex-col gap-2 mt-4 md:col-span-2">
+        <span className="text-xs font-bold text-muted-foreground flex justify-between items-center">
+          <span>Markdown 正文内容 (Body)</span>
+          <span className="px-2 py-0.5 rounded bg-muted text-[10px]">MD Editor</span>
+        </span>
+        <div data-color-mode="light" className="w-full rounded-md border shadow-sm overflow-hidden focus-within:ring-1 focus-within:ring-ring transition-shadow [&_.w-md-editor]:!border-0 [&_.w-md-editor]:!shadow-none [&_.w-md-editor-toolbar]:!bg-muted/40 [&_.w-md-editor-toolbar]:!border-b [&_.w-md-editor-toolbar]:!border-input">
+          <MDEditor
+            value={card.bodyMarkdown}
+            onChange={(value) => onBodyChange(value ?? '')}
+            height={400}
+            minHeight={300}
+            textareaProps={{
+              placeholder: '在这里输入 Markdown 内容...',
+              'aria-label': 'Markdown Body',
+            }}
+          />
+        </div>
       </label>
     </section>
   );

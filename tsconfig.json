@@ -10,7 +10,11 @@
     "isolatedModules": true,
     "moduleDetection": "force",
     "noEmit": true,
-    "types": ["node", "vite/client"]
+    "types": ["node", "vite/client"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["publish-ui/*"]
+    }
   },
   "include": [
     "App.tsx",
@@ -27,7 +31,9 @@
     "types/**/*.ts",
     "worker/**/*.ts",
     "tests/**/*.ts",
-    "tests/**/*.tsx"
+    "tests/**/*.tsx",
+    "publish-ui/**/*.ts",
+    "publish-ui/**/*.tsx"
   ],
   "exclude": ["node_modules", "dist", "ref", ".spec-workflow"]
 }

@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import type { SessionResponse } from '../../types/github';
+import type { CardDocument } from '../../types/content';
 import { CardEditorPanel } from './CardEditorPanel';
 import { DevDiagnostics } from './DevDiagnostics';
 import { PublishDialog } from './PublishDialog';
 import { RepoSelector } from './RepoSelector';
 import { useDraftWorkspace } from '../../hooks/use-draft-workspace';
-import { PreviewAppShell } from '../preview/PreviewAppShell';
+import { LiveInlinePreview } from './LiveInlinePreview';
 
 async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
   const response = await fetch(input, init);
@@ -35,6 +36,58 @@ export function CmsWorkspaceShell() {
   const [session, setSession] = useState<SessionResponse | null>(null);
   const [isLoadingSession, setIsLoadingSession] = useState(true);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortParam, setSortParam] = useState<'date_desc' | 'date_asc' | 'dirty_first'>('date_desc');
+
+  const groupedCards = useMemo(() => {
+    if (!workspace.workspace) return new Map<string, Map<string, CardDocument[]>>();
+    
+    let filteredCards = workspace.workspace.cards;
+    if (searchQuery.trim() !== '') {
+      const q = searchQuery.toLowerCase();
+      filteredCards = filteredCards.filter(card => {
+        const title = String(card.data.title || '').toLowerCase();
+        const content = String(card.bodyMarkdown || '').toLowerCase();
+        const id = String(card.id || '').toLowerCase();
+        return title.includes(q) || id.includes(q) || content.includes(q);
+      });
+    }
+
+    filteredCards = [...filteredCards].sort((a, b) => {
+      if (sortParam === 'dirty_first') {
+        if (a.dirty && !b.dirty) return -1;
+        if (!a.dirty && b.dirty) return 1;
+      }
+      
+      const dateA = new Date(String(a.data.published || '1970-01-01')).getTime();
+      const dateB = new Date(String(b.data.published || '1970-01-01')).getTime();
+      
+      if (sortParam === 'date_asc') {
+        return dateA - dateB;
+      }
+      return dateB - dateA;
+    });
+
+    const schools = new Map<string, Map<string, CardDocument[]>>();
+    for (const card of filteredCards) {
+      const schoolSlug = String(card.data.school_slug || '未分类学院');
+      const channel = String(card.data.source?.channel || '默认源');
+      if (!schools.has(schoolSlug)) {
+        schools.set(schoolSlug, new Map());
+      }
+      const channels = schools.get(schoolSlug)!;
+      if (!channels.has(channel)) {
+        channels.set(channel, []);
+      }
+      channels.get(channel)!.push(card);
+    }
+    return schools;
+  }, [workspace.workspace?.cards, searchQuery, sortParam]);
+
+  const activePreviewArticle = useMemo(() => {
+    if (!workspace.compileResult.preview || !workspace.selectedCardId) return null;
+    return workspace.compileResult.preview.content.notices.find(a => a.guid === workspace.selectedCardId) || null;
+  }, [workspace.compileResult.preview, workspace.selectedCardId]);
 
   async function refreshSession(): Promise<void> {
     setIsLoadingSession(true);
@@ -72,20 +125,20 @@ export function CmsWorkspaceShell() {
 
   if (isLoadingSession) {
     return (
-      <main className="cms-shell">
-        <h1>EDU-PUBLISH-CMS</h1>
-        <p>Checking session…</p>
+      <main className="flex flex-col items-center justify-center h-screen bg-background text-foreground text-center">
+        <h1 className="text-3xl font-black mb-2 text-primary">EDU-PUBLISH-CMS</h1>
+        <p className="text-muted-foreground animate-pulse">正在检查会话…</p>
       </main>
     );
   }
 
   if (sessionError) {
     return (
-      <main className="cms-shell">
-        <h1>EDU-PUBLISH-CMS</h1>
-        <p>{sessionError}</p>
-        <button type="button" onClick={() => void refreshSession()}>
-          Retry Session Check
+      <main className="flex flex-col items-center justify-center h-screen bg-background text-foreground text-center px-4">
+        <h1 className="text-3xl font-black mb-4 text-primary">EDU-PUBLISH-CMS</h1>
+        <p className="text-destructive mb-6 font-medium bg-destructive/10 p-3 rounded-lg max-w-lg">{sessionError}</p>
+        <button className="h-10 px-6 rounded-md bg-primary text-primary-foreground font-bold shadow hover:opacity-90 transition-opacity" type="button" onClick={() => void refreshSession()}>
+          重试会话检查
         </button>
       </main>
     );
@@ -93,117 +146,258 @@ export function CmsWorkspaceShell() {
 
   if (!session?.authenticated) {
     return (
-      <main className="cms-shell cms-shell--auth">
-        <header className="cms-shell__header">
-          <p className="cms-shell__eyebrow">Maintainer Console</p>
-          <h1>EDU-PUBLISH-CMS</h1>
-          <p>Sign in with GitHub to start editing.</p>
+      <main className="flex flex-col items-center justify-center h-screen bg-background text-foreground text-center">
+        <header className="mb-8">
+          <p className="text-sm font-bold text-primary tracking-widest uppercase mb-1">维护者控制台</p>
+          <h1 className="text-4xl font-black mb-2">EDU-PUBLISH-CMS</h1>
+          <p className="text-muted-foreground text-lg">使用 GitHub 登录以开始编辑。</p>
         </header>
 
-        <section className="cms-shell__auth-card">
-          <p>
-            The Worker keeps your GitHub token server-side and only exposes reduced repo and workspace
-            data to the browser.
+        <section className="bg-card border shadow-xl rounded-xl p-8 max-w-md w-full flex flex-col items-center gap-6">
+          <p className="text-sm text-card-foreground leading-relaxed">
+            Worker 会在服务器端妥善保存您的 GitHub 令牌，并仅向浏览器暴露精简的仓库与工作区数据。
           </p>
-          <a href="/api/auth/github/start">Sign in with GitHub</a>
+          <a className="flex items-center justify-center h-12 w-full rounded-md bg-primary text-primary-foreground font-bold text-base shadow hover:opacity-90 transition-opacity" href="/api/auth/github/start">使用 GitHub 登录</a>
         </section>
       </main>
     );
   }
 
   return (
-    <main className="cms-shell cms-shell--workspace">
-      <header className="cms-shell__header">
+    <main className="flex flex-col h-screen overflow-hidden bg-background text-foreground font-sans">
+      <header className="flex h-16 shrink-0 items-center justify-between border-b px-6 bg-card text-card-foreground">
         <div>
-          <p className="cms-shell__eyebrow">Maintainer Console</p>
-          <h1>EDU-PUBLISH-CMS</h1>
-          <p>
-            {session.viewer?.name || session.viewer?.login || 'Authenticated maintainer'} is editing
-            through the Worker-managed GitHub session.
+          <p className="text-xs font-bold text-primary tracking-wider uppercase">维护者控制台</p>
+          <h1 className="text-xl font-black">EDU-PUBLISH-CMS</h1>
+          <p className="text-sm text-muted-foreground">
+            {session.viewer?.name || session.viewer?.login || '认证维护者'} 正在通过 Worker 管理的 GitHub 会话进行编辑。
           </p>
         </div>
 
-        <button type="button" onClick={() => void handleLogout()}>
-          Sign out
+        <button 
+          className="h-9 px-4 rounded-md border text-sm font-semibold hover:bg-muted"
+          type="button" 
+          onClick={() => void handleLogout()}
+        >
+          退出登录
         </button>
       </header>
 
-      <div className="cms-shell__toolbar">
-        <button type="button" disabled={!workspace.canUndo} onClick={workspace.undo}>
-          Undo
-        </button>
-        <button type="button" disabled={!workspace.canRedo} onClick={workspace.redo}>
-          Redo
-        </button>
-        <button type="button" disabled={workspace.changedFiles.length === 0} onClick={workspace.discardAllChanges}>
-          Discard All Changes
-        </button>
-        <button
-          type="button"
-          disabled={workspace.changedFiles.length === 0}
-          onClick={() => setIsPublishDialogOpen(true)}
-        >
-          Review Publish
-        </button>
+      <div className="flex shrink-0 items-center justify-between border-b bg-muted/20 p-3 px-6 shadow-sm">
+        <div className="flex items-center gap-2 w-[276px] shrink-0">
+          <button className="h-8 px-3 rounded text-sm bg-background border shadow-sm disabled:opacity-50" type="button" disabled={!workspace.canUndo} onClick={workspace.undo}>
+            撤销
+          </button>
+          <button className="h-8 px-3 rounded text-sm bg-background border shadow-sm disabled:opacity-50" type="button" disabled={!workspace.canRedo} onClick={workspace.redo}>
+            重做
+          </button>
+          <button className="h-8 px-3 rounded text-sm bg-background border shadow-sm disabled:opacity-50 text-destructive border-destructive/30" type="button" disabled={workspace.changedFiles.length === 0} onClick={workspace.discardAllChanges}>
+            放弃更改
+          </button>
+        </div>
+
+        <div className="flex-1 flex justify-center">
+          <div className="w-full max-w-xl">
+            <RepoSelector
+              repos={workspace.repos}
+              branches={workspace.branches}
+              selectedRepoFullName={workspace.selectedRepo?.fullName || ''}
+              selectedBranch={workspace.selectedBranch}
+              isLoadingRepos={workspace.isLoadingRepos}
+              isLoadingBranches={workspace.isLoadingBranches}
+              isLoadingWorkspace={workspace.isLoadingWorkspace}
+              onRepoChange={(value) => void workspace.selectRepo(value)}
+              onBranchChange={workspace.selectBranch}
+              onLoadWorkspace={() => void workspace.loadWorkspace()}
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end w-[336px] xl:w-[416px] shrink-0">
+          <button
+            className="h-9 px-4 rounded-md text-sm font-bold bg-primary text-primary-foreground shadow flex gap-2 items-center disabled:opacity-50"
+            type="button"
+            disabled={workspace.changedFiles.length === 0}
+            onClick={() => setIsPublishDialogOpen(true)}
+          >
+            检查发布 ({workspace.changedFiles.length})
+          </button>
+        </div>
       </div>
 
-      <RepoSelector
-        repos={workspace.repos}
-        branches={workspace.branches}
-        selectedRepoFullName={workspace.selectedRepo?.fullName || ''}
-        selectedBranch={workspace.selectedBranch}
-        isLoadingRepos={workspace.isLoadingRepos}
-        isLoadingBranches={workspace.isLoadingBranches}
-        isLoadingWorkspace={workspace.isLoadingWorkspace}
-        onRepoChange={(value) => void workspace.selectRepo(value)}
-        onBranchChange={workspace.selectBranch}
-        onLoadWorkspace={() => void workspace.loadWorkspace()}
-      />
+      {workspace.error ? <p className="px-6 py-2 bg-destructive/10 text-destructive text-sm font-semibold border-b">{workspace.error}</p> : null}
 
-      {workspace.error ? <p className="cms-shell__error">{workspace.error}</p> : null}
-
-      <section className="cms-shell__workspace-grid">
-        <aside className="cms-shell__sidebar">
-          <div className="cms-shell__sidebar-header">
-            <h2>Cards</h2>
-            <p>{workspace.workspace?.cards.length || 0} loaded</p>
+      <section className="flex flex-1 overflow-hidden bg-muted/10">
+        {/* Left Sidebar - Card Navigation */}
+        <aside className="w-[300px] shrink-0 border-r bg-card flex flex-col z-10 shadow-[4px_0_24px_-12px_rgba(0,0,0,0.1)]">
+          <div className="sticky top-0 bg-card/90 backdrop-blur border-b px-4 py-3 xl:py-4 shrink-0 flex flex-col gap-3 z-10">
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold text-sm tracking-wide">内容侧边栏</h2>
+              <span className="bg-muted text-muted-foreground text-[10px] px-2 py-0.5 rounded-full font-bold shadow-inner">
+                已加载 {workspace.workspace?.cards.length || 0}
+              </span>
+            </div>
+            
+            {workspace.workspace && (
+              <div className="flex flex-col gap-2">
+                <div className="relative">
+                  <svg className="w-4 h-4 absolute left-2.5 top-2 text-muted-foreground" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="搜索标题或内容..."
+                    className="w-full text-xs pl-9 pr-3 py-1.5 bg-background border rounded-md shadow-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none transition-all"
+                  />
+                </div>
+                <div className="flex bg-muted/50 p-1 rounded-md border shadow-inner">
+                  <button
+                    type="button"
+                    onClick={() => setSortParam('date_desc')}
+                    className={`flex-1 text-[10px] font-semibold py-1 rounded transition-colors ${sortParam === 'date_desc' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                  >
+                    先看最新
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSortParam('date_asc')}
+                    className={`flex-1 text-[10px] font-semibold py-1 rounded transition-colors ${sortParam === 'date_asc' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                  >
+                    按旧排序
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSortParam('dirty_first')}
+                    className={`flex-1 text-[10px] font-semibold py-1 rounded transition-colors ${sortParam === 'dirty_first' ? 'bg-background shadow-sm text-amber-600 dark:text-amber-500 border border-amber-200/50' : 'text-muted-foreground hover:text-amber-600'}`}
+                  >
+                    优先已改
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {workspace.workspace ? (
-            <div className="cms-shell__card-list" role="list" aria-label="Workspace cards">
-              {workspace.workspace.cards.map((card) => (
-                <button
-                  key={card.path}
-                  type="button"
-                  className="cms-shell__card-item"
-                  aria-pressed={workspace.selectedCardId === card.id}
-                  onClick={() => workspace.selectCard(card.id)}
-                >
-                  <strong>{String(card.data.title ?? card.id ?? 'Untitled')}</strong>
-                  <span>{card.path}</span>
-                  <span>{card.dirty ? 'Dirty' : 'Clean'}</span>
-                </button>
+            <div className="flex flex-col p-2 gap-3 overflow-y-auto flex-1 custom-scrollbar" role="list" aria-label="Workspace cards tree">
+              {Array.from(groupedCards.entries()).map(([school, channels]) => (
+                <div key={school} className="flex flex-col gap-1.5">
+                  <div className="font-bold text-xs px-3 py-1.5 bg-muted/50 text-muted-foreground rounded-md shadow-sm border">{school}</div>
+                  <div className="flex flex-col gap-2 ml-1">
+                    {Array.from(channels.entries()).map(([channel, cards]) => (
+                      <div key={channel} className="flex flex-col gap-1 ml-2 border-l-2 border-primary/20 pl-2">
+                        <div className="text-[11px] font-semibold px-2 py-0.5 text-primary/80 uppercase tracking-wider">{channel}</div>
+                        {cards.map((card) => (
+                          <button
+                            key={card.path}
+                            type="button"
+                            className={`flex flex-col text-left px-3 py-2 rounded-lg text-sm transition-all duration-200 ${
+                              workspace.selectedCardId === card.id 
+                                ? 'bg-primary/10 border-primary/30 border shadow-sm ring-1 ring-primary/20' 
+                                : 'hover:bg-muted border border-transparent hover:shadow-sm'
+                            }`}
+                            aria-pressed={workspace.selectedCardId === card.id}
+                            onClick={() => workspace.selectCard(card.id)}
+                          >
+                            <div className="flex justify-between items-center w-full mb-1 gap-2">
+                              <strong className={`truncate text-[13px] font-bold leading-tight ${workspace.selectedCardId === card.id ? 'text-primary' : 'text-foreground'}`}>
+                                {String(card.data.title ?? card.id ?? '无标题')}
+                              </strong>
+                              {card.dirty && <span className="h-2 w-2 rounded-full bg-amber-500 shrink-0 shadow-sm"></span>}
+                            </div>
+                            <span className="text-[10px] text-muted-foreground truncate font-mono opacity-80">{card.path.split('/').pop() || card.path}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           ) : (
-            <p className="cms-shell__empty-copy">Load a workspace to see editable cards.</p>
+            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-muted-foreground">
+              <svg className="w-12 h-12 mb-4 opacity-20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+              </svg>
+              <p className="text-sm font-medium">请先加载工作区数据</p>
+              <p className="text-xs mt-1 opacity-70">在顶部选择数据源</p>
+            </div>
           )}
         </aside>
 
-        <section className="cms-shell__editor-column">
-          <CardEditorPanel
-            card={workspace.selectedCard}
-            issues={workspace.validationIssues}
-            onFieldChange={workspace.updateField}
-            onBodyChange={workspace.updateBody}
-            onUploadAttachmentFiles={workspace.uploadAttachmentFiles}
-          />
-
-          <PreviewAppShell
-            preview={workspace.compileResult.preview}
-            issues={workspace.validationIssues}
-          />
+        {/* Center Main - Card Editor */}
+        <section className="flex-1 flex flex-col bg-background overflow-hidden relative shadow-2xl z-20 xl:border-r">
+          <div className="flex-1 overflow-y-auto custom-scrollbar flex justify-center">
+            <div className="w-full max-w-5xl">
+              <CardEditorPanel
+                card={workspace.selectedCard}
+                issues={workspace.validationIssues}
+                onFieldChange={workspace.updateField}
+                onBodyChange={workspace.updateBody}
+                onUploadAttachmentFiles={workspace.uploadAttachmentFiles}
+              />
+            </div>
+          </div>
         </section>
+
+        {/* Right Sidebar - Live Preview and Modification History */}
+        <aside className="w-[360px] xl:w-[440px] shrink-0 bg-muted/30 flex flex-col z-10 border-l shadow-inner overflow-hidden">
+          {/* Top Half: Inline Preview */}
+          <div className="flex-1 flex flex-col border-b bg-background overflow-hidden relative min-h-0">
+            <div className="sticky top-0 bg-muted/50 backdrop-blur px-4 py-3 xl:py-4 shrink-0 flex items-center justify-between z-10 border-b">
+              <h2 className="font-bold text-sm tracking-wider uppercase text-muted-foreground flex items-center gap-2">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                </span>
+                即时预览
+              </h2>
+            </div>
+            <div className="flex-1 overflow-hidden relative">
+              <LiveInlinePreview article={activePreviewArticle} preview={workspace.compileResult.preview} />
+            </div>
+          </div>
+
+          {/* Bottom Half: History */}
+          <div className="h-[35%] min-h-[250px] flex flex-col bg-muted/10 shrink-0">
+            <div className="sticky top-0 bg-muted/50 backdrop-blur border-b px-4 py-2.5 xl:py-3 shrink-0 flex items-center justify-between z-10">
+              <h2 className="font-bold text-xs xl:text-sm tracking-wider uppercase text-muted-foreground flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 Z"></path></svg>
+                修改历史
+              </h2>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+              {workspace.workspace?.cards.filter(c => c.dirty).length ? (
+                <div className="flex flex-col gap-3">
+                  {workspace.workspace.cards.filter(c => c.dirty).map(card => (
+                    <button
+                      key={card.path}
+                      className="text-left bg-background border rounded-lg p-3 shadow-sm hover:border-primary/50 transition-colors"
+                      onClick={() => workspace.selectCard(card.id)}
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-1">
+                        <strong className="text-sm truncate font-medium text-foreground">
+                          {String(card.data.title ?? card.id ?? '无标题')}
+                        </strong>
+                        <span className="text-[10px] bg-amber-500/10 text-amber-600 px-1.5 py-0.5 rounded uppercase font-bold border border-amber-500/20 shrink-0">已修改</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground truncate font-mono opacity-70">
+                        {card.path.split('/').pop() || card.path}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center text-muted-foreground opacity-50 px-4 text-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="mb-4"><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                  <p className="text-sm font-bold">暂无修改记录</p>
+                  <p className="text-xs mt-1">编辑左侧内容后将在此处显示记录。</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </aside>
       </section>
 
       {import.meta.env.DEV ? <DevDiagnostics diagnostics={workspace.diagnostics} /> : null}

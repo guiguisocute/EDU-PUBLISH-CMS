@@ -89,21 +89,28 @@ export const workspaceRoutes: WorkerRoute[] = [
         );
       }
 
-      const [siteYaml, widgetsYaml, subscriptionsYaml, cards] = await Promise.all([
+      const [siteYaml, widgetsYaml, subscriptionsYaml] = await Promise.all([
         getBlobText(repo, siteConfigEntry.sha, session.accessToken, env),
         getBlobText(repo, widgetsConfigEntry.sha, session.accessToken, env),
         getBlobText(repo, subscriptionsConfigEntry.sha, session.accessToken, env),
-        Promise.all(
-          cardEntries.map(async (entry) => {
+      ]);
+
+      const cards = [];
+      const batchSize = 10;
+      for (let i = 0; i < cardEntries.length; i += batchSize) {
+        const batch = cardEntries.slice(i, i + batchSize);
+        const batchResults = await Promise.all(
+          batch.map(async (entry) => {
             const raw = await getBlobText(repo, entry.sha, session.accessToken, env);
             return parseCardDocument(raw, {
               path: entry.path,
               sha: entry.sha,
               dirty: false,
             });
-          }),
-        ),
-      ]);
+          })
+        );
+        cards.push(...batchResults);
+      }
 
       return Response.json({
         repo,

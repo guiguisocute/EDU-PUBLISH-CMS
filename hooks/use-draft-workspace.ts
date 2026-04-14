@@ -430,10 +430,10 @@ export function useDraftWorkspace(): DraftWorkspaceController {
     );
     const attachmentFiles = workspace.attachments
       .filter((attachment) => {
-        const currentKey = `${attachment.sha}:${attachment.size}:${attachment.deleted ? 'deleted' : 'present'}:${attachment.content || ''}`;
         const originalKey = originalAttachments.get(attachment.path);
+        const currentKey = `${attachment.sha}:${attachment.size}:${attachment.deleted ? 'deleted' : 'present'}`;
 
-        return attachment.dirty || originalKey !== `${attachment.sha}:${attachment.size}:${attachment.deleted ? 'deleted' : 'present'}` || Boolean(attachment.content && !originalKey) || currentKey !== `${attachment.sha}:${attachment.size}:${attachment.deleted ? 'deleted' : 'present'}`;
+        return attachment.dirty || originalKey !== currentKey || Boolean(attachment.content);
       })
       .map((attachment) => attachment.path)
       .sort((left, right) => left.localeCompare(right, 'zh-CN'));
