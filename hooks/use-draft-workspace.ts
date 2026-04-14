@@ -832,7 +832,7 @@ export function useDraftWorkspace(): DraftWorkspaceController {
           content: card.raw,
         } satisfies PublishChange];
       });
-      const attachmentChanges: PublishChange[] = workspace.attachments.flatMap((attachment) => {
+      const attachmentChanges: PublishChange[] = workspace.attachments.flatMap<PublishChange>((attachment) => {
         if (attachment.deleted) {
           return [{
             path: attachment.path,
