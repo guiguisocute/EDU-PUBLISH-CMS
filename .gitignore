@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.wrangler/
+playwright-report/
+test-results/
+
+.dev.vars
+.env.vars
+.env
+.env.*
+!.env.example
+
+.DS_Store
+Thumbs.db
+
+*.log
+pnpm-debug.log*

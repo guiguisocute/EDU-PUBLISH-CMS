@@ -1,0 +1,10 @@
+"$schema" = "./node_modules/wrangler/config-schema.json"
+
+name = "edu-publish-cms"
+main = "worker/index.ts"
+compatibility_date = "2026-04-14"
+workers_dev = false
+tsconfig = "tsconfig.json"
+
+[observability]
+enabled = false

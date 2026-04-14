@@ -1,0 +1,22 @@
+{
+  "filePath": ".spec-workflow/specs/edu-publish-cms/tasks.md",
+  "currentVersion": 2,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2026-04-13T20:36:24.811Z",
+      "trigger": "initial",
+      "approvalId": "approval_1776112584801_12ve2gnmf",
+      "approvalTitle": "Approve tasks document for edu-publish-cms"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2026-04-13T20:43:03.853Z",
+      "trigger": "approved",
+      "approvalId": "approval_1776112584801_12ve2gnmf",
+      "approvalTitle": "Approve tasks document for edu-publish-cms"
+    }
+  ]
+}

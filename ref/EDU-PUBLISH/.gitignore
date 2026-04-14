@@ -1,0 +1,90 @@
+# ─── Dependencies ───
+node_modules
+.pnpm-debug.log*
+.pnpm-store/
+package-lock.json
+
+# ─── Production builds & generated outputs ───
+dist
+dist-ssr
+build
+public/generated/
+public/manifest.json
+public/rss.xml
+public/rss/
+
+# ─── Environment variables (contains sensitive API keys) ───
+.env
+.env.local
+.env.*.local
+
+# ─── Docker runtime data ───
+data/
+napcat/
+ntqq/
+docker-compose.yml
+
+# ─── Archive: keep directory, ignore runtime contents ───
+archive/*
+!archive/.gitkeep
+
+# ─── Agent tooling ───
+.gemini/
+.claude/
+.codex/
+.codex
+.opencode/
+.sisyphus/
+.spec-workflow/
+.worktrees/
+skills/
+CLAUDE.md
+AGENT.md
+AGENTS.md
+
+# ─── Platform deploy cache ───
+.vercel/
+.wrangler/
+
+# ─── Dev branch: content is managed by test/main ───
+docs/
+
+# ─── Logs ───
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# ─── Cache ───
+.cache
+.vite
+.turbo
+*.tsbuildinfo
+
+# ─── Editor ───
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ─── OS ───
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# ─── Temp & misc ───
+*.tmp
+*.temp
+*.bak
+*~
+tmp/
+temp/
+*.tgz
+*.pid
+*.seed
+coverage
+.nyc_output
