@@ -1,6 +1,6 @@
 "$schema" = "./node_modules/wrangler/config-schema.json"
 
-name = "edu-publish-cms"
+name = "edupublishcms"
 main = "worker/index.ts"
 compatibility_date = "2026-04-14"
 workers_dev = false
