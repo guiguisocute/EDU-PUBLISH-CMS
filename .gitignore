@@ -17,3 +17,6 @@ Thumbs.db
 
 *.log
 pnpm-debug.log*
+
+.spec-workflow/
+
