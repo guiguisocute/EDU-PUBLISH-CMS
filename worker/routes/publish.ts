@@ -2,6 +2,7 @@ import { parseCardDocument } from '../../lib/content/card-document';
 import { compileWorkspace } from '../../lib/content/preview-compiler';
 import {
   getBlobText,
+  getMultipleBlobText,
   getBranchHead,
   getTreeEntries,
 } from '../../lib/github/client';
@@ -62,21 +63,27 @@ async function loadWorkspaceSnapshot(
     throw new Error('Repository config is incomplete for publish validation.');
   }
 
-  const [siteYaml, widgetsYaml, subscriptionsYaml, cards] = await Promise.all([
+  const [siteYaml, widgetsYaml, subscriptionsYaml] = await Promise.all([
     getBlobText(repo, siteConfigEntry.sha, accessToken, env),
     getBlobText(repo, widgetsConfigEntry.sha, accessToken, env),
     getBlobText(repo, subscriptionsConfigEntry.sha, accessToken, env),
-    Promise.all(
-      cardEntries.map(async (entry) => {
-        const raw = await getBlobText(repo, entry.sha, accessToken, env);
-        return parseCardDocument(raw, {
-          path: entry.path,
-          sha: entry.sha,
-          dirty: false,
-        });
-      }),
-    ),
   ]);
+
+  const cards = [];
+  const batchSize = 40;
+  for (let i = 0; i < cardEntries.length; i += batchSize) {
+    const batch = cardEntries.slice(i, i + batchSize);
+    const map = await getMultipleBlobText(repo, batch.map(e => e.sha), accessToken, env);
+    
+    for (const entry of batch) {
+      const raw = map.get(entry.sha) ?? '';
+      cards.push(parseCardDocument(raw, {
+        path: entry.path,
+        sha: entry.sha,
+        dirty: false,
+      }));
+    }
+  }
 
   return {
     workspace: {
