@@ -3,6 +3,22 @@ import { describe, expect, it, vi } from 'vitest';
 import { parseCardDocument } from '../../../lib/content/card-document';
 import { useDraftWorkspace } from '../../../hooks/use-draft-workspace';
 
+const ONE_BY_ONE_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2p+gAAAABJRU5ErkJggg==';
+
+function createWorkspaceAssetResponse(init?: RequestInit) {
+  const body = JSON.parse(String(init?.body || '{}')) as {
+    assets?: Array<{ path: string; sha: string; size: number }>;
+  };
+
+  return Response.json({
+    assets: (body.assets || []).map((asset) => ({
+      ...asset,
+      encoding: 'base64',
+      content: asset.path.endsWith('.png') ? ONE_BY_ONE_PNG_BASE64 : btoa('demo asset content'),
+    })),
+  });
+}
+
 function createWorkspaceResponse(branch = 'main') {
   return {
     repo: {
@@ -99,6 +115,10 @@ describe('useDraftWorkspace', () => {
         return Response.json(createWorkspaceResponse(body.branch));
       }
 
+      if (url === '/api/workspace/assets') {
+        return createWorkspaceAssetResponse(init);
+      }
+
       return Response.json({ error: 'unexpected request' }, { status: 500 });
     });
 
@@ -129,9 +149,18 @@ describe('useDraftWorkspace', () => {
       await result.current.loadWorkspace();
     });
 
+    expect(result.current.workspace).toBeNull();
+    expect(result.current.selectedCard).toBeNull();
+    expect(result.current.workspaceLoadProgress?.phase).toBe('confirm');
+
+    await act(async () => {
+      await result.current.continueWorkspaceAssetSync();
+    });
+
     expect(result.current.workspace?.baseHeadSha).toBe('head-sha-main');
     expect(result.current.selectedCard?.id).toBe('notice-1');
     expect(result.current.selectedCard?.data.title).toBe('First notice');
+    expect(result.current.workspace?.attachments[0]?.previewUrl).toBeTruthy();
     expect(result.current.dirtyCount).toBe(0);
 
     act(() => {
@@ -192,6 +221,10 @@ describe('useDraftWorkspace', () => {
         return Response.json(createWorkspaceResponse(body.branch));
       }
 
+      if (url === '/api/workspace/assets') {
+        return createWorkspaceAssetResponse(init);
+      }
+
       return Response.json({ error: 'unexpected request' }, { status: 500 });
     });
 
@@ -205,8 +238,9 @@ describe('useDraftWorkspace', () => {
       await result.current.loadWorkspace();
     });
 
-    expect(result.current.workspace?.branch).toBe('main');
-    expect(result.current.selectedCardId).toBe('notice-1');
+    expect(result.current.workspace).toBeNull();
+    expect(result.current.workspaceLoadProgress?.phase).toBe('confirm');
+    expect(result.current.selectedCardId).toBeNull();
 
     act(() => {
       result.current.selectBranch('cms-draft');
@@ -249,6 +283,10 @@ describe('useDraftWorkspace', () => {
         return Response.json(createWorkspaceResponse(body.branch));
       }
 
+      if (url === '/api/workspace/assets') {
+        return createWorkspaceAssetResponse(init);
+      }
+
       return Response.json({ error: 'unexpected request' }, { status: 500 });
     });
 
@@ -260,6 +298,10 @@ describe('useDraftWorkspace', () => {
       await result.current.loadRepos();
       await result.current.selectRepo('octocat/edu-publish-main');
       await result.current.loadWorkspace();
+    });
+
+    act(() => {
+      result.current.skipWorkspaceAssetSync();
     });
 
     act(() => {
@@ -340,6 +382,10 @@ describe('useDraftWorkspace', () => {
         return Response.json(createWorkspaceResponse(body.branch));
       }
 
+      if (url === '/api/workspace/assets') {
+        return createWorkspaceAssetResponse(init);
+      }
+
       return Response.json({ error: 'unexpected request' }, { status: 500 });
     });
 
@@ -351,6 +397,10 @@ describe('useDraftWorkspace', () => {
       await result.current.loadRepos();
       await result.current.selectRepo('octocat/edu-publish-main');
       await result.current.loadWorkspace();
+    });
+
+    act(() => {
+      result.current.skipWorkspaceAssetSync();
     });
 
     const file = new File(['hello attachment'], 'apply.docx', {
@@ -374,5 +424,217 @@ describe('useDraftWorkspace', () => {
       deleted: false,
       encoding: 'base64',
     });
+  });
+
+  it('lets the user skip asset sync and continue with metadata-only workspace loading', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url === '/api/repos') {
+        return Response.json({
+          repos: [
+            {
+              owner: 'octocat',
+              name: 'edu-publish-main',
+              fullName: 'octocat/edu-publish-main',
+              defaultBranch: 'main',
+              private: true,
+              permissions: { admin: true, maintain: true, push: true, triage: true, pull: true },
+              updatedAt: '2026-04-14T12:00:00Z',
+            },
+          ],
+        });
+      }
+
+      if (url === '/api/repos/octocat/edu-publish-main/branches') {
+        return Response.json({
+          branches: [{ name: 'main', headSha: 'head-sha-main' }],
+        });
+      }
+
+      if (url === '/api/workspace/load') {
+        const body = JSON.parse(String(init?.body || '{}')) as { branch: string };
+        return Response.json(createWorkspaceResponse(body.branch));
+      }
+
+      return Response.json({ error: 'unexpected request' }, { status: 500 });
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result } = renderHook(() => useDraftWorkspace());
+
+    await act(async () => {
+      await result.current.loadRepos();
+      await result.current.selectRepo('octocat/edu-publish-main');
+      await result.current.loadWorkspace();
+    });
+
+    expect(result.current.workspaceLoadProgress?.phase).toBe('confirm');
+    expect(result.current.workspace).toBeNull();
+
+    act(() => {
+      result.current.skipWorkspaceAssetSync();
+    });
+
+    expect(result.current.workspaceLoadProgress).toBeNull();
+    expect(result.current.workspace?.baseHeadSha).toBe('head-sha-main');
+    expect(result.current.selectedCard?.id).toBe('notice-1');
+    expect(result.current.workspace?.attachments[0]?.previewUrl).toBeUndefined();
+    expect(fetchMock.mock.calls.some(([input]) => String(input) === '/api/workspace/assets')).toBe(false);
+  });
+
+  it('hydrates synced image assets as data urls for reliable preview rendering', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url === '/api/repos') {
+        return Response.json({
+          repos: [
+            {
+              owner: 'octocat',
+              name: 'edu-publish-main',
+              fullName: 'octocat/edu-publish-main',
+              defaultBranch: 'main',
+              private: true,
+              permissions: { admin: true, maintain: true, push: true, triage: true, pull: true },
+              updatedAt: '2026-04-14T12:00:00Z',
+            },
+          ],
+        });
+      }
+
+      if (url === '/api/repos/octocat/edu-publish-main/branches') {
+        return Response.json({
+          branches: [{ name: 'main', headSha: 'head-sha-main' }],
+        });
+      }
+
+      if (url === '/api/workspace/load') {
+        const body = JSON.parse(String(init?.body || '{}')) as { branch: string };
+        return Response.json({
+          ...createWorkspaceResponse(body.branch),
+          attachments: [
+            {
+              path: 'content/card/demo/poster.png',
+              sha: 'blob-poster',
+              size: 256,
+            },
+          ],
+        });
+      }
+
+      if (url === '/api/workspace/assets') {
+        return createWorkspaceAssetResponse(init);
+      }
+
+      return Response.json({ error: 'unexpected request' }, { status: 500 });
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result } = renderHook(() => useDraftWorkspace());
+
+    await act(async () => {
+      await result.current.loadRepos();
+      await result.current.selectRepo('octocat/edu-publish-main');
+      await result.current.loadWorkspace();
+    });
+
+    expect(result.current.workspace).toBeNull();
+    expect(result.current.workspaceLoadProgress?.phase).toBe('confirm');
+
+    await act(async () => {
+      await result.current.continueWorkspaceAssetSync();
+    });
+
+    expect(result.current.workspace?.attachments[0]?.previewUrl).toMatch(/^data:image\/png;base64,/);
+  });
+
+  it('resumes asset sync from remaining batches after a partial failure', async () => {
+    let assetRequestCount = 0;
+    const requestedBatchSizes: number[] = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url === '/api/repos') {
+        return Response.json({
+          repos: [
+            {
+              owner: 'octocat',
+              name: 'edu-publish-main',
+              fullName: 'octocat/edu-publish-main',
+              defaultBranch: 'main',
+              private: true,
+              permissions: { admin: true, maintain: true, push: true, triage: true, pull: true },
+              updatedAt: '2026-04-14T12:00:00Z',
+            },
+          ],
+        });
+      }
+
+      if (url === '/api/repos/octocat/edu-publish-main/branches') {
+        return Response.json({
+          branches: [{ name: 'main', headSha: 'head-sha-main' }],
+        });
+      }
+
+      if (url === '/api/workspace/load') {
+        const body = JSON.parse(String(init?.body || '{}')) as { branch: string };
+
+        return Response.json({
+          ...createWorkspaceResponse(body.branch),
+          attachments: Array.from({ length: 13 }, (_, index) => ({
+            path: `content/attachments/demo-${index + 1}.pdf`,
+            sha: `blob-attachment-${index + 1}`,
+            size: 256,
+          })),
+        });
+      }
+
+      if (url === '/api/workspace/assets') {
+        assetRequestCount += 1;
+        const body = JSON.parse(String(init?.body || '{}')) as {
+          assets?: Array<{ path: string; sha: string; size: number }>;
+        };
+
+        requestedBatchSizes.push((body.assets || []).length);
+
+        if (assetRequestCount === 2) {
+          return Response.json({ error: 'Internal server error.' }, { status: 500 });
+        }
+
+        return createWorkspaceAssetResponse(init);
+      }
+
+      return Response.json({ error: 'unexpected request' }, { status: 500 });
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result } = renderHook(() => useDraftWorkspace());
+
+    await act(async () => {
+      await result.current.loadRepos();
+      await result.current.selectRepo('octocat/edu-publish-main');
+      await result.current.loadWorkspace();
+    });
+
+    await act(async () => {
+      await result.current.continueWorkspaceAssetSync();
+    });
+
+    expect(result.current.workspace).toBeNull();
+    expect(result.current.workspaceLoadProgress?.phase).toBe('confirm');
+    expect(result.current.workspaceLoadProgress?.loadedAssets).toBe(12);
+    expect(result.current.error).toContain('Internal server error');
+
+    await act(async () => {
+      await result.current.continueWorkspaceAssetSync();
+    });
+
+    expect(requestedBatchSizes).toEqual([12, 1, 1]);
+    expect(result.current.workspaceLoadProgress).toBeNull();
+    expect(result.current.workspace?.attachments.every((attachment) => Boolean(attachment.previewUrl))).toBe(true);
   });
 });

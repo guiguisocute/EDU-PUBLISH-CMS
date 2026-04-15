@@ -24,6 +24,11 @@ import { getTimeWindowState, formatTimestamp } from '@/lib/time-window';
 import { CountdownBar, LiveCountdownBar } from './CountdownBar';
 import { siteConfig } from '../lib/site-config';
 import { renderSimpleMarkdown } from '../lib/simple-markdown';
+import { buildDownloadFileName, isExternalUrl } from '../../lib/content/workspace-assets';
+
+const SANITIZE_URI_OPTIONS = {
+  ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|ftp|tel|file|blob|data):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+};
 
 interface NoticeDetailModalProps {
   article: Article | null;
@@ -127,69 +132,13 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = React.memo(({
     };
   }, [article, onClose, onPrev, onNext, canPrev, canNext]);
 
-  const handleShare = async () => {
-    if (!article) return;
-    const rawUrl = shareUrl || `${window.location.origin}${window.location.pathname}#${article.guid}`;
-    const targetUrl = (() => {
-      try {
-        const parsed = new URL(rawUrl, window.location.origin);
-        const encodedPath = parsed.pathname
-          .split('/')
-          .map((segment) => encodeURIComponent(decodeURIComponent(segment)))
-          .join('/');
-        const encodedHash = parsed.hash
-          ? `#${encodeURIComponent(decodeURIComponent(parsed.hash.slice(1)))}`
-          : '';
-        return `${parsed.origin}${encodedPath}${parsed.search}${encodedHash}`;
-      } catch {
-        return encodeURI(rawUrl);
-      }
-    })();
-
-    const fallbackCopy = (text: string): boolean => {
-      try {
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        textarea.setAttribute('readonly', '');
-        textarea.style.position = 'fixed';
-        textarea.style.left = '-9999px';
-        document.body.appendChild(textarea);
-        textarea.select();
-        textarea.setSelectionRange(0, textarea.value.length);
-        const ok = document.execCommand('copy');
-        document.body.removeChild(textarea);
-        return ok;
-      } catch {
-        return false;
-      }
-    };
-
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(targetUrl);
-        toast({ description: '复制链接成功' });
-        return;
-      }
-    } catch {
-      // Continue to fallback.
-    }
-
-    if (fallbackCopy(targetUrl)) {
-      toast({ description: '复制链接成功' });
-      return;
-    }
-
-    window.prompt('复制此链接', targetUrl);
-    toast({ description: '无法自动复制，请手动复制链接', variant: 'destructive' });
-  };
-
   const descriptionHtml = React.useMemo(
-    () => DOMPurify.sanitize(renderSimpleMarkdown(article?.description || '')),
+    () => DOMPurify.sanitize(renderSimpleMarkdown(article?.description || ''), SANITIZE_URI_OPTIONS),
     [article?.description]
   );
 
   const sanitizedContent = React.useMemo(
-    () => (article?.content ? DOMPurify.sanitize(article.content) : ''),
+    () => (article?.content ? DOMPurify.sanitize(article.content, SANITIZE_URI_OPTIONS) : ''),
     [article?.content]
   );
   const schoolShortNameText = String(article?.schoolShortName || '').trim() || `未知${siteConfig.organization_unit_label}`;
@@ -200,33 +149,6 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = React.memo(({
   const sourceChannelText = withSchoolPrefix(sourceChannelTextRaw);
   const sourceSenderText = String(article?.source?.sender || article?.author || '未知发布人').trim() || '未知发布人';
 
-  const navButtons = (
-    <>
-      <Button
-        variant="outline"
-        size="icon"
-        onClick={onPrev}
-        disabled={!canPrev}
-        className="h-8 w-8 md:h-10 md:w-10"
-        aria-label="上一条通知"
-        title="上一条通知"
-      >
-        <ChevronLeft className="h-3.5 w-3.5 md:h-4 md:w-4" />
-      </Button>
-      <Button
-        variant="outline"
-        size="icon"
-        onClick={onNext}
-        disabled={!canNext}
-        className="h-8 w-8 md:h-10 md:w-10"
-        aria-label="下一条通知"
-        title="下一条通知"
-      >
-        <ChevronRight className="h-3.5 w-3.5 md:h-4 md:w-4" />
-      </Button>
-    </>
-  );
-
   const dateDisplay = article ? (
     <div className="inline-flex items-center gap-1 text-xs md:text-sm text-muted-foreground min-w-0">
       <Calendar className="h-3.5 w-3.5 md:h-4 md:w-4 shrink-0" />
@@ -235,10 +157,7 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = React.memo(({
   ) : null;
 
   const actionButtons = (
-    <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
-      <Button variant="ghost" className="gap-1.5 md:gap-2 h-8 md:h-10 px-2.5 md:px-3 text-xs md:text-sm" onClick={handleShare}>
-        <Share2 className="h-3.5 w-3.5 md:h-4 md:w-4" /> 分享
-      </Button>
+    <div className="flex items-center justify-end gap-1.5 md:gap-2 shrink-0">
       <Button onClick={onClose} className="h-8 md:h-10 px-3 md:px-4 text-xs md:text-sm">关闭</Button>
     </div>
   );
@@ -349,11 +268,15 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = React.memo(({
                     <div className="space-y-1.5 md:space-y-2">
                       {article.attachments.map((attachment) => {
                         const Icon = iconForAttachment(attachment.type, attachment.name);
-                        const hasLink = Boolean(attachment.url && attachment.url !== '#');
+                        const href = String(attachment.downloadUrl || attachment.url || '');
+                        const hasLink = Boolean(href && href !== '#');
+                        const forceDownloadName = href.startsWith('blob:') || href.startsWith('data:')
+                          ? buildDownloadFileName(attachment.name, href)
+                          : undefined;
                         if (!hasLink) {
                           return (
                             <div
-                              key={`${attachment.url}-${attachment.name}`}
+                              key={`${href}-${attachment.name}`}
                               className="flex min-w-0 items-center justify-between gap-2 rounded-lg border bg-background px-2.5 md:px-3 py-1.5 md:py-2 text-xs md:text-sm"
                             >
                               <div className="min-w-0 flex flex-1 items-center gap-2">
@@ -372,10 +295,11 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = React.memo(({
 
                         return (
                           <a
-                            key={`${attachment.url}-${attachment.name}`}
-                            href={attachment.url}
-                            target="_blank"
-                            rel="noreferrer"
+                            key={`${href}-${attachment.name}`}
+                            href={href}
+                            target={isExternalUrl(href) ? '_blank' : undefined}
+                            rel={isExternalUrl(href) ? 'noreferrer noopener' : undefined}
+                            download={isExternalUrl(href) ? undefined : forceDownloadName}
                             className="flex min-w-0 items-center justify-between gap-2 rounded-lg border bg-background px-2.5 md:px-3 py-1.5 md:py-2 text-xs md:text-sm hover:border-primary/50"
                           >
                             <div className="min-w-0 flex flex-1 items-center gap-2">
@@ -410,22 +334,9 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = React.memo(({
               </div>
             </ScrollArea>
 
-            <footer className="px-3 md:px-6 py-2.5 md:py-3 border-t bg-background shrink-0">
-              {/* Mobile: nav above, date + actions below */}
-              <div className="flex items-center justify-center gap-2 lg:hidden mb-2">
-                {navButtons}
-              </div>
-              <div className="flex items-center justify-between gap-3 lg:hidden">
-                {dateDisplay}
-                {actionButtons}
-              </div>
-
-              {/* Desktop: date | nav | actions in one row */}
-              <div className="hidden lg:flex items-center justify-between gap-3">
-                {dateDisplay}
-                <div className="flex items-center gap-2">{navButtons}</div>
-                {actionButtons}
-              </div>
+            <footer className="px-3 md:px-6 py-2.5 md:py-3 border-t bg-background shrink-0 flex items-center justify-between">
+              {dateDisplay}
+              {actionButtons}
             </footer>
           </motion.div>
         </motion.div>

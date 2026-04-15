@@ -6,6 +6,7 @@ export interface Enclosure {
 export interface NoticeAttachment {
   name: string;
   url: string;
+  downloadUrl?: string;
   type?: string;
 }
 

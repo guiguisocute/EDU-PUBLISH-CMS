@@ -86,13 +86,13 @@ export function normalizeAttachmentUrl(
 
   const decoded = safeDecodeUriComponent(clean);
 
-  if (clean.includes('..') || decoded.includes('..')) {
-    throw new Error(withFilePath(`Suspicious path: ${clean}`, filePath));
-  }
-
   if (/^https?:\/\//i.test(clean)) {
     return clean;
   }
+
+  const isAttachmentFolderPath = clean.startsWith('/attachments/')
+    || clean.startsWith('./attachments/')
+    || clean.startsWith('attachments/');
 
   const normalizedUrl = clean.startsWith('/attachments/')
     ? clean
@@ -100,9 +100,15 @@ export function normalizeAttachmentUrl(
       ? `/attachments/${clean.slice('./attachments/'.length)}`
       : clean.startsWith('attachments/')
         ? `/attachments/${clean.slice('attachments/'.length)}`
-        : clean.startsWith('/')
+        : clean.startsWith('./') || clean.startsWith('../')
+          ? clean
+          : clean.startsWith('/')
           ? clean
           : `/attachments/${clean.replace(/^\.?\/+/, '')}`;
+
+  if ((clean.startsWith('./') || clean.startsWith('../')) && !isAttachmentFolderPath) {
+    return normalizedUrl;
+  }
 
   const normalizedSegments = normalizedUrl
     .replace(/^\//, '')

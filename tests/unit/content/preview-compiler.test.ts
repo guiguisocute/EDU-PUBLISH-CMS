@@ -117,7 +117,7 @@ source:
       schoolSlug: 'eng',
       schoolShortName: 'ENG',
       subscriptionId: 'eng-campus-notices',
-      thumbnail: '/img/eng.svg',
+      thumbnail: '/api/workspace/blob?owner=demo&name=edu-publish&branch=main&candidate=img%2Feng.svg&candidate=public%2Fimg%2Feng.svg',
       isPlaceholderCover: true,
       showCover: true,
       feedTitle: 'Engineering School',
@@ -125,12 +125,14 @@ source:
     expect(pinnedArticle?.attachments).toEqual([
       {
         name: 'PDF Guide',
-        url: '/attachments/guide.pdf',
+        url: '/api/workspace/blob?owner=demo&name=edu-publish&branch=main&candidate=attachments%2Fguide.pdf&candidate=content%2Fattachments%2Fguide.pdf',
+        downloadUrl: '/api/workspace/blob?owner=demo&name=edu-publish&branch=main&candidate=attachments%2Fguide.pdf&candidate=content%2Fattachments%2Fguide.pdf&download=1',
         type: 'pdf',
       },
       {
         name: '报名表',
-        url: '/attachments/forms/apply.docx',
+        url: '/api/workspace/blob?owner=demo&name=edu-publish&branch=main&candidate=attachments%2Fforms%2Fapply.docx&candidate=content%2Fattachments%2Fforms%2Fapply.docx',
+        downloadUrl: '/api/workspace/blob?owner=demo&name=edu-publish&branch=main&candidate=attachments%2Fforms%2Fapply.docx&candidate=content%2Fattachments%2Fforms%2Fapply.docx&download=1',
         type: 'docx',
       },
     ]);
@@ -183,5 +185,91 @@ category: 通知公告
         message: expect.stringContaining('Unknown school_slug'),
       },
     ]);
+  });
+
+  it('resolves hydrated workspace assets from content and public image paths', () => {
+    const card = parseCardDocument(
+      `---
+id: notice-assets
+school_slug: eng
+title: Asset-backed notice
+published: 2026-04-14T09:00:00+08:00
+category: 通知公告
+cover: /img/eng.svg
+attachments:
+  - name: Guide PDF
+    url: /attachments/guide.pdf
+source:
+  channel: Campus Notices
+---
+![正文配图](./poster.png)
+
+![共享横幅](../shared/banner.png)
+
+正文。
+`,
+      {
+        path: 'content/card/eng/notice-assets.md',
+      },
+    );
+
+    const result = compileWorkspace({
+      ...createWorkspace([card]),
+      attachments: [
+        {
+          path: 'public/img/eng.svg',
+          sha: 'blob-eng',
+          size: 128,
+          previewUrl: 'blob:eng-icon',
+        },
+        {
+          path: 'content/attachments/guide.pdf',
+          sha: 'blob-guide',
+          size: 1024,
+          previewUrl: 'blob:guide-pdf',
+        },
+        {
+          path: 'content/card/eng/poster.png',
+          sha: 'blob-poster',
+          size: 2048,
+          previewUrl: 'blob:poster-image',
+        },
+        {
+          path: 'content/card/shared/banner.png',
+          sha: 'blob-banner',
+          size: 4096,
+          previewUrl: 'blob:banner-image',
+        },
+      ],
+    }, {
+      generatedAt: '2026-04-15T00:00:00.000Z',
+    });
+
+    expect(result.issues).toEqual([]);
+    const article = result.preview?.content.notices.find((item) => item.guid === 'notice-assets');
+
+    expect(article?.thumbnail).toBe('blob:eng-icon');
+    expect(article?.attachments).toEqual([
+      {
+        name: 'Guide PDF',
+        url: 'blob:guide-pdf',
+        downloadUrl: '/api/workspace/blob?owner=demo&name=edu-publish&sha=blob-guide&path=content%2Fattachments%2Fguide.pdf&download=1',
+        type: 'pdf',
+      },
+      {
+        name: '正文配图',
+        url: 'blob:poster-image',
+        downloadUrl: '/api/workspace/blob?owner=demo&name=edu-publish&sha=blob-poster&path=content%2Fcard%2Feng%2Fposter.png&download=1',
+        type: 'image',
+      },
+      {
+        name: '共享横幅',
+        url: 'blob:banner-image',
+        downloadUrl: '/api/workspace/blob?owner=demo&name=edu-publish&sha=blob-banner&path=content%2Fcard%2Fshared%2Fbanner.png&download=1',
+        type: 'image',
+      },
+    ]);
+    expect(article?.content).toContain('src="blob:poster-image"');
+    expect(article?.content).toContain('src="blob:banner-image"');
   });
 });

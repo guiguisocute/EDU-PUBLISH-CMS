@@ -2,6 +2,7 @@ import YAML from 'yaml';
 import { extractInlineAttachments, mergeAttachments, normalizeAttachments } from './attachments';
 import { normalizeSiteConfig } from './site-config';
 import { normalizeSubscriptionsConfig, resolveCardSubscription } from './subscriptions-config';
+import { resolveWorkspaceAssetDownloadUrl, resolveWorkspaceAssetUrl } from './workspace-assets';
 import { normalizeWidgetsConfig } from './widgets-config';
 import type {
   Article,
@@ -33,16 +34,16 @@ function escapeHtml(input: string): string {
     .replace(/'/g, '&#39;');
 }
 
-function renderInlineMarkdown(input: string): string {
+function renderInlineMarkdown(input: string, resolver?: (url: string) => string): string {
   return escapeHtml(input)
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, '<img alt="$1" src="$2" />')
-    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+    .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_, alt, src) => `<img alt="${alt}" src="${resolver ? resolver(src) : src}" />`)
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label, href) => `<a href="${resolver ? resolver(href) : href}" target="_blank" rel="noreferrer">${label}</a>`);
 }
 
-function renderMarkdownToHtml(markdown: string): string {
+function renderMarkdownToHtml(markdown: string, resolver?: (url: string) => string): string {
   const normalized = String(markdown ?? '').trim();
 
   if (!normalized) {
@@ -67,7 +68,7 @@ function renderMarkdownToHtml(markdown: string): string {
           .map((line) => line.trim())
           .filter(Boolean)
           .map((line) => line.replace(/^-\s+/, ''))
-          .map((line) => `<li>${renderInlineMarkdown(line)}</li>`)
+          .map((line) => `<li>${renderInlineMarkdown(line, resolver)}</li>`)
           .join('');
 
         return `<ul>${items}</ul>`;
@@ -77,10 +78,10 @@ function renderMarkdownToHtml(markdown: string): string {
 
       if (headingMatch) {
         const level = headingMatch[1].length;
-        return `<h${level}>${renderInlineMarkdown(headingMatch[2])}</h${level}>`;
+        return `<h${level}>${renderInlineMarkdown(headingMatch[2], resolver)}</h${level}>`;
       }
 
-      return `<p>${section.split(/\r?\n/).map((line) => renderInlineMarkdown(line)).join('<br/>')}</p>`;
+      return `<p>${section.split(/\r?\n/).map((line) => renderInlineMarkdown(line, resolver)).join('<br/>')}</p>`;
     })
     .join('\n');
 }
@@ -308,16 +309,46 @@ function buildSearchIndex(notices: Article[]): SearchItem[] {
   }));
 }
 
-function buildCompiledContent(
+  function buildCompiledContent(
   workspace: DraftWorkspace,
   generatedAt: string,
   siteConfig: SiteConfig,
   issues: ValidationIssue[],
 ): CompiledContent {
+  const resolveUrl = (url: string, basePath: string) => {
+    return resolveWorkspaceAssetUrl(url, basePath, {
+      attachments: workspace.attachments,
+      repo: workspace.repo,
+      branch: workspace.branch,
+    });
+  };
+  const resolveDownloadUrl = (url: string, basePath: string) => {
+    return resolveWorkspaceAssetDownloadUrl(url, basePath, {
+      attachments: workspace.attachments,
+      repo: workspace.repo,
+      branch: workspace.branch,
+    });
+  };
+
   const subscriptionsConfig = normalizeSubscriptionsConfig(
     parseYamlFile(workspace.readonlyConfig.subscriptionsYaml, 'config/subscriptions.yaml'),
     siteConfig,
   );
+
+  if (siteConfig.favicon) siteConfig.favicon = resolveUrl(siteConfig.favicon, 'config/site.yaml');
+  if (siteConfig.default_cover) siteConfig.default_cover = resolveUrl(siteConfig.default_cover, 'config/site.yaml');
+  if (siteConfig.logo_light) siteConfig.logo_light = resolveUrl(siteConfig.logo_light, 'config/site.yaml');
+  if (siteConfig.logo_dark) siteConfig.logo_dark = resolveUrl(siteConfig.logo_dark, 'config/site.yaml');
+
+  subscriptionsConfig.schools.forEach(s => {
+    if (s.icon) s.icon = resolveUrl(s.icon, 'config/subscriptions.yaml');
+  });
+
+  subscriptionsConfig.subscriptions.forEach(s => {
+    if (s.icon) s.icon = resolveUrl(s.icon, 'config/subscriptions.yaml');
+    if (s.schoolIcon) s.schoolIcon = resolveUrl(s.schoolIcon, 'config/subscriptions.yaml');
+  });
+
   const schoolOrderMap = new Map(subscriptionsConfig.schools.map((school, index) => [school.slug, index]));
   const subscriptionOrderMap = new Map(
     subscriptionsConfig.subscriptions.map((subscription, index) => [subscription.id, index]),
@@ -337,10 +368,22 @@ function buildCompiledContent(
       const frontmatterAttachments = normalizeAttachments(card.data.attachments, card.path);
       const inlineAttachments = extractInlineAttachments(card.bodyMarkdown, card.path);
       const attachments = mergeAttachments(frontmatterAttachments, inlineAttachments);
+      const resolvedAttachments = attachments.map((attachment) => ({
+        ...attachment,
+        url: resolveUrl(attachment.url, card.path),
+        downloadUrl: resolveDownloadUrl(attachment.url, card.path),
+      }));
       const school = resolution.school;
       const schoolName = String(school?.name || resolution.schoolSlug);
-      const cover = String(card.data.cover ?? '').trim();
+      const coverRaw = String(card.data.cover ?? '').trim();
+      const cover = coverRaw ? resolveUrl(coverRaw, card.path) : '';
       const sender = String(card.data.source?.sender ?? '').trim();
+      const badgeRaw = String(card.data.badge ?? '').trim();
+      const badge = badgeRaw ? resolveUrl(badgeRaw, card.path) : '';
+      const schoolIconRaw = String(school?.icon ?? '').trim();
+      const schoolIcon = schoolIconRaw ? resolveUrl(schoolIconRaw, 'config/subscriptions.yaml') : '';
+      const siteConfigCoverRaw = String(siteConfig.default_cover ?? '').trim();
+      const siteConfigCover = siteConfigCoverRaw ? resolveUrl(siteConfigCoverRaw, 'config/site.yaml') : '';
 
       notices.push({
         guid: String(card.data.id || '').trim(),
@@ -355,10 +398,10 @@ function buildCompiledContent(
           ? card.data.tags.map((tag) => String(tag).trim()).filter(Boolean)
           : [],
         pinned: toBoolean(card.data.pinned ?? card.data.pined, false),
-        thumbnail: cover || school?.icon || siteConfig.default_cover,
+        thumbnail: cover || schoolIcon || siteConfigCover,
         isPlaceholderCover: !cover,
         showCover: toBoolean(card.data.show_cover, true),
-        badge: String(card.data.badge ?? '').trim(),
+        badge: badge,
         link: String(card.data.extra_url ?? '').trim(),
         startAt: startAt || (endAt ? published : ''),
         endAt,
@@ -366,11 +409,11 @@ function buildCompiledContent(
           channel: String(card.data.source?.channel ?? '').trim() || UNKNOWN_SOURCE,
           sender,
         },
-        attachments,
+        attachments: resolvedAttachments,
         pubDate: published,
         author: sender || schoolName,
         feedTitle: schoolName,
-        content: renderMarkdownToHtml(card.bodyMarkdown),
+        content: renderMarkdownToHtml(card.bodyMarkdown, (url) => resolveUrl(url, card.path)),
         enclosure: { link: '', type: '' },
       });
     } catch (error) {

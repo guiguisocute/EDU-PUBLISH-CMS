@@ -43,14 +43,14 @@ export const CountdownBar: React.FC<CountdownBarProps> = React.memo(({ progress,
 
   const gradient = React.useMemo(
     () => `linear-gradient(45deg, 
-      hsl(var(--primary)) 25%, 
-      hsl(var(--primary) / ${stripeOpacity}) 25%, 
-      hsl(var(--primary) / ${stripeOpacity}) 50%, 
-      hsl(var(--primary)) 50%, 
-      hsl(var(--primary)) 75%, 
-      hsl(var(--primary) / ${stripeOpacity}) 75%, 
-      hsl(var(--primary) / ${stripeOpacity}) 100%)`,
-    [stripeOpacity]
+      rgba(255, 255, 255, 0) 25%, 
+      rgba(255, 255, 255, ${0.15}) 25%, 
+      rgba(255, 255, 255, ${0.15}) 50%, 
+      rgba(255, 255, 255, 0) 50%, 
+      rgba(255, 255, 255, 0) 75%, 
+      rgba(255, 255, 255, ${0.15}) 75%, 
+      rgba(255, 255, 255, ${0.15}) 100%)`,
+    []
   );
 
   React.useEffect(ensureCSS, []);
@@ -95,7 +95,7 @@ export const CountdownBar: React.FC<CountdownBarProps> = React.memo(({ progress,
       <div className={`relative w-full ${barHeight} rounded-full bg-muted overflow-hidden border border-border/40`}>
         <div
           ref={barRef}
-          className="absolute inset-y-0 left-0 cdb-stripe-animate"
+          className="absolute inset-y-0 left-0 bg-primary cdb-stripe-animate"
           style={{
             backgroundImage: gradient,
           }}

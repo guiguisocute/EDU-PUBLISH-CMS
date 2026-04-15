@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import React, { useMemo } from 'react';
 import DOMPurify from 'dompurify';
 import {
   FileArchive,
@@ -14,7 +14,15 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import type { Article, CmsPreviewModel } from '../../types/content';
+import { buildDownloadFileName, isExternalUrl } from '../../lib/content/workspace-assets';
+import { LiveCountdownBar } from '../../publish-ui/components/CountdownBar';
+import { useNow } from '../../publish-ui/hooks/use-now';
+import { formatTimestamp, getTimeWindowState } from '../../publish-ui/lib/time-window';
 import { renderSimpleMarkdown } from '../../publish-ui/lib/simple-markdown';
+
+const SANITIZE_URI_OPTIONS = {
+  ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|ftp|tel|file|blob|data):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+};
 
 export interface LiveInlinePreviewProps {
   article: Article | null;
@@ -22,14 +30,6 @@ export interface LiveInlinePreviewProps {
 }
 
 export function LiveInlinePreview({ article, preview }: LiveInlinePreviewProps) {
-  if (!article) {
-    return (
-      <div className="h-full flex items-center justify-center text-muted-foreground p-6 text-center bg-slate-50/50 dark:bg-slate-900/50">
-        <p className="text-sm">在左侧选择一篇通知即可预览内容在详情页的效果。</p>
-      </div>
-    );
-  }
-
   const iconForAttachment = (type?: string, name?: string) => {
     const ext = (type || name?.split('.').pop() || 'file').toLowerCase();
     if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) return FileImage;
@@ -41,13 +41,13 @@ export function LiveInlinePreview({ article, preview }: LiveInlinePreviewProps) 
   };
 
   const descriptionHtml = useMemo(
-    () => DOMPurify.sanitize(renderSimpleMarkdown(article.description || '')),
-    [article.description]
+    () => DOMPurify.sanitize(renderSimpleMarkdown(article?.description || ''), SANITIZE_URI_OPTIONS),
+    [article?.description]
   );
 
   const sanitizedContent = useMemo(
-    () => (article.content ? DOMPurify.sanitize(article.content) : ''),
-    [article.content]
+    () => (article?.content ? DOMPurify.sanitize(article.content, SANITIZE_URI_OPTIONS) : ''),
+    [article?.content]
   );
 
   const sourceIcon = useMemo(() => {
@@ -62,9 +62,17 @@ export function LiveInlinePreview({ article, preview }: LiveInlinePreviewProps) 
     }
     return preview.siteConfig.favicon || '/favicon.svg';
   }, [article, preview]);
+  const [sourceIconBroken, setSourceIconBroken] = React.useState(false);
+  const hasTimeWindow = Boolean(article?.startAt || article?.endAt);
+  const now = useNow(hasTimeWindow);
+  const timing = useMemo(() => getTimeWindowState(article?.startAt, article?.endAt, now), [article?.startAt, article?.endAt, now]);
+
+  React.useEffect(() => {
+    setSourceIconBroken(false);
+  }, [article?.guid, sourceIcon]);
 
   const formattedDate = useMemo(() => {
-    if (!article.pubDate) return '';
+    if (!article?.pubDate) return '';
     try {
       const d = new Date(article.pubDate);
       if (Number.isNaN(d.valueOf())) return article.pubDate;
@@ -72,10 +80,18 @@ export function LiveInlinePreview({ article, preview }: LiveInlinePreviewProps) 
     } catch {
       return article.pubDate;
     }
-  }, [article.pubDate]);
+  }, [article?.pubDate]);
 
-  const sourceChannelText = `[${article.schoolShortName || '未知学院'}]${article.source?.channel || article.feedTitle || '未知来源'}`;
-  const sourceSenderText = article.source?.sender || '网络信息中心';
+  const sourceChannelText = `[${article?.schoolShortName || '未知学院'}]${article?.source?.channel || article?.feedTitle || '未知来源'}`;
+  const sourceSenderText = article?.source?.sender || '网络信息中心';
+
+  if (!article) {
+    return (
+      <div className="h-full flex items-center justify-center text-muted-foreground p-6 text-center bg-slate-50/50 dark:bg-slate-900/50">
+        <p className="text-sm">在左侧选择一篇通知即可预览内容在详情页的效果。</p>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full w-full overflow-y-auto custom-scrollbar bg-slate-100/50 dark:bg-slate-900/50 p-4 sm:p-6 lg:p-8 relative md:text-sm text-xs">
@@ -85,11 +101,12 @@ export function LiveInlinePreview({ article, preview }: LiveInlinePreviewProps) 
           {/* Header - Sender Info */}
           <header className="flex items-center gap-3 mb-6 pb-5 border-b">
             <div className="h-11 w-11 shrink-0 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden border border-primary/20">
-              {sourceIcon ? (
+              {sourceIcon && !sourceIconBroken ? (
                 <img
                   src={sourceIcon}
                   alt="Source Logo"
                   className="w-full h-full object-cover"
+                  onError={() => setSourceIconBroken(true)}
                 />
               ) : (
                 <span className="text-primary font-black text-lg">
@@ -105,6 +122,17 @@ export function LiveInlinePreview({ article, preview }: LiveInlinePreviewProps) 
 
         {/* Tags Row */}
         <div className="flex flex-wrap gap-2 items-center mb-5">
+          <LiveCountdownBar startAt={article.startAt} endAt={article.endAt} size="md" />
+          {timing.state === 'expired' && (
+            <span className="text-[10px] md:text-[11px] px-1.5 md:px-2 py-0.5 md:py-1 rounded border border-rose-300/80 bg-rose-50 text-rose-700 font-bold dark:border-rose-300/60 dark:bg-rose-500/20 dark:text-rose-100">
+              已过期
+            </span>
+          )}
+          {timing.state === 'upcoming' && (
+            <span className="text-[10px] md:text-[11px] px-1.5 md:px-2 py-0.5 md:py-1 rounded border border-primary/30 bg-primary/8 text-primary font-bold dark:border-primary/40 dark:bg-primary/15 dark:text-primary">
+              将于 {formatTimestamp(article.startAt)} 开始
+            </span>
+          )}
           {article.aiCategory && (
             <span className="text-[12px] bg-[#1d4ed8] text-white px-2.5 py-0.5 rounded shadow-sm font-bold tracking-wide leading-relaxed">
               {article.aiCategory}
@@ -142,30 +170,50 @@ export function LiveInlinePreview({ article, preview }: LiveInlinePreviewProps) 
             <div className="space-y-2">
               {article.attachments.map((attachment) => {
                 const Icon = iconForAttachment(attachment.type, attachment.name);
-                const hasLink = Boolean(attachment.url && attachment.url !== '#');
+                const href = String(attachment.downloadUrl || attachment.url || '');
+                const hasLink = Boolean(href && href !== '#');
+                const forceDownloadName = href.startsWith('blob:') || href.startsWith('data:')
+                  ? buildDownloadFileName(attachment.name, href)
+                  : undefined;
 
                 return (
-                  <div
-                    key={`${attachment.url}-${attachment.name}`}
-                    className={`flex min-w-0 items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm shadow-sm ${hasLink ? 'hover:border-primary/50 cursor-pointer' : ''}`}
-                  >
-                    <div className="min-w-0 flex flex-1 items-center gap-3">
-                      <Icon className="h-4 w-4 text-primary shrink-0" />
-                      <div className="min-w-0">
-                        <p className="font-medium break-all leading-snug">{attachment.name}</p>
-                        <p className="text-[10px] md:text-xs text-muted-foreground">{attachment.type || 'file'}</p>
+                  hasLink ? (
+                    <a
+                      key={`${href}-${attachment.name}`}
+                      href={href}
+                      target={isExternalUrl(href) ? '_blank' : undefined}
+                      rel={isExternalUrl(href) ? 'noreferrer noopener' : undefined}
+                      download={isExternalUrl(href) ? undefined : forceDownloadName}
+                      className="flex min-w-0 items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm shadow-sm hover:border-primary/50"
+                    >
+                      <div className="min-w-0 flex flex-1 items-center gap-3">
+                        <Icon className="h-4 w-4 text-primary shrink-0" />
+                        <div className="min-w-0">
+                          <p className="font-medium break-all leading-snug">{attachment.name}</p>
+                          <p className="text-[10px] md:text-xs text-muted-foreground">{attachment.type || 'file'}</p>
+                        </div>
                       </div>
-                    </div>
-                    {hasLink ? (
                       <span className="inline-flex shrink-0 items-center gap-1 text-primary text-xs font-bold bg-primary/10 px-2 py-1 rounded">
                         下载 <Download className="h-3.5 w-3.5" />
                       </span>
-                    ) : (
+                    </a>
+                  ) : (
+                    <div
+                      key={`${href}-${attachment.name}`}
+                      className="flex min-w-0 items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm shadow-sm"
+                    >
+                      <div className="min-w-0 flex flex-1 items-center gap-3">
+                        <Icon className="h-4 w-4 text-primary shrink-0" />
+                        <div className="min-w-0">
+                          <p className="font-medium break-all leading-snug">{attachment.name}</p>
+                          <p className="text-[10px] md:text-xs text-muted-foreground">{attachment.type || 'file'}</p>
+                        </div>
+                      </div>
                       <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground text-xs font-bold bg-muted px-2 py-1 rounded">
                         已记录 <Download className="h-3.5 w-3.5" />
                       </span>
-                    )}
-                  </div>
+                    </div>
+                  )
                 );
               })}
             </div>
@@ -181,8 +229,7 @@ export function LiveInlinePreview({ article, preview }: LiveInlinePreviewProps) 
         </article>
 
         {/* Attribution at bottom */}
-        <div className="mt-20 text-[12px] md:text-[13px] italic text-muted-foreground/70 w-full mb-10 flex flex-col sm:flex-row justify-between items-end sm:items-center gap-6">
-          <span className="flex-1 opacity-70">发布时间：{formattedDate || '未设定'}</span>
+        <div className="mt-20 text-[12px] md:text-[13px] italic text-muted-foreground/70 w-full mb-10 flex justify-end items-center gap-6">
           <span className="text-right w-fit sm:min-w-[200px] opacity-70">
             —— 来源：{sourceChannelText}、 发送者：{sourceSenderText}
           </span>

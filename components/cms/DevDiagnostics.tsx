@@ -8,7 +8,7 @@ export interface DevDiagnosticsProps {
 }
 
 export function DevDiagnostics({ diagnostics }: DevDiagnosticsProps) {
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(true);
   const constraintsRef = useRef(null);
 
   return (

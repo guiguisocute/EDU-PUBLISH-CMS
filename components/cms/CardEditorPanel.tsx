@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import MDEditor from '@uiw/react-md-editor';
+import { buildDownloadFileName, isExternalUrl, resolveWorkspaceAssetUrl, toWorkspaceRelativeUrl } from '../../lib/content/workspace-assets';
 import type {
   CardDocument,
   NoticeAttachment,
   NoticeAttachmentInput,
   ValidationIssue,
 } from '../../types/content';
+import type { RepoRef, WorkspaceAttachmentFile } from '../../types/github';
 
 interface AttachmentRow {
   name: string;
@@ -19,6 +21,10 @@ export interface CardEditorPanelProps {
   onFieldChange: (fieldPath: string, value: unknown) => void;
   onBodyChange: (markdown: string) => void;
   onUploadAttachmentFiles?: (files: FileList | File[]) => Promise<void>;
+  onDeleteCard?: (id: string) => void;
+  workspaceRepo?: RepoRef | null;
+  workspaceBranch?: string | null;
+  workspaceAttachments?: WorkspaceAttachmentFile[];
 }
 
 function normalizeAttachmentRows(
@@ -43,6 +49,38 @@ function normalizeAttachmentRows(
       type: String(attachment.type ?? ''),
     };
   });
+}
+
+function getFileNameFromUrl(url: string): string {
+  const normalized = String(url || '').split('?')[0].replace(/\\/g, '/');
+  return normalized.split('/').filter(Boolean).at(-1) || '';
+}
+
+function getAttachmentTypeFromUrl(url: string): string {
+  const fileName = getFileNameFromUrl(url);
+  const extension = fileName.split('.').pop()?.toLowerCase() || '';
+
+  if (!extension) {
+    return 'file';
+  }
+
+  if (['doc', 'docx'].includes(extension)) {
+    return 'docx';
+  }
+
+  if (['xls', 'xlsx', 'csv'].includes(extension)) {
+    return 'xlsx';
+  }
+
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(extension)) {
+    return 'image';
+  }
+
+  return extension;
+}
+
+function isDownloadableAssetHref(url: string): boolean {
+  return url.startsWith('blob:') || url.startsWith('data:') || url.startsWith('/api/workspace/blob?');
 }
 
 function toTagsString(tags: unknown): string {
@@ -209,6 +247,10 @@ export function CardEditorPanel({
   onFieldChange,
   onBodyChange,
   onUploadAttachmentFiles,
+  onDeleteCard,
+  workspaceRepo,
+  workspaceBranch,
+  workspaceAttachments,
 }: CardEditorPanelProps) {
   const [attachmentRows, setAttachmentRows] = useState<AttachmentRow[]>(() =>
     normalizeAttachmentRows(card?.data.attachments),
@@ -222,6 +264,68 @@ export function CardEditorPanel({
     const inlineIssues = buildInlineErrors(card, attachmentRows);
     return combineIssues(card, issues, inlineIssues);
   }, [attachmentRows, card, issues]);
+  const availableAttachmentOptions = useMemo(() => {
+    return (workspaceAttachments || [])
+      .filter((attachment) => !attachment.deleted && attachment.path.startsWith('content/attachments/'))
+      .map((attachment) => {
+        const relativeUrl = toWorkspaceRelativeUrl(attachment.path);
+        return {
+          path: attachment.path,
+          relativeUrl,
+          fileName: getFileNameFromUrl(relativeUrl),
+          type: getAttachmentTypeFromUrl(relativeUrl),
+        };
+      })
+      .sort((left, right) => left.relativeUrl.localeCompare(right.relativeUrl, 'zh-CN'));
+  }, [workspaceAttachments]);
+  const attachmentUrlListId = `${card?.id || 'draft'}-attachment-urls`;
+  const resolveEditorAsset = useMemo(
+    () => (url: string) => resolveWorkspaceAssetUrl(url, card?.path || '', {
+      attachments: workspaceAttachments || [],
+      repo: workspaceRepo || undefined,
+      branch: workspaceBranch || undefined,
+    }),
+    [card?.path, workspaceAttachments, workspaceBranch, workspaceRepo],
+  );
+  const previewOptions = useMemo(() => ({
+    urlTransform: (url: string) => resolveEditorAsset(String(url || '')),
+    components: {
+      a: ({ href, children, node, ...props }: any) => {
+        const resolvedHref = String(href || '');
+        const external = isExternalUrl(resolvedHref);
+        const childText = Array.isArray(children)
+          ? children.map((child) => typeof child === 'string' ? child : '').join('').trim()
+          : typeof children === 'string'
+            ? children.trim()
+            : '';
+        const downloadName = getFileNameFromUrl(resolvedHref);
+        const safeDownloadName = buildDownloadFileName(
+          downloadName && !downloadName.includes('blob?') ? downloadName : childText,
+          resolvedHref,
+        );
+
+        return (
+          <a
+            {...props}
+            href={resolvedHref || undefined}
+            target={external ? '_blank' : undefined}
+            rel={external ? 'noreferrer noopener' : undefined}
+            download={isDownloadableAssetHref(resolvedHref) ? safeDownloadName : undefined}
+          >
+            {children}
+          </a>
+        );
+      },
+      img: ({ src, alt, node, ...props }: any) => (
+        <img
+          {...props}
+          src={String(src || '')}
+          alt={String(alt || '')}
+          className="max-w-full rounded-md border border-border/40 shadow-sm"
+        />
+      ),
+    },
+  }), [resolveEditorAsset]);
 
   if (!card) {
     return (
@@ -235,11 +339,29 @@ export function CardEditorPanel({
   return (
     <section className="flex flex-col gap-6 p-6 lg:p-10 w-full animate-in fade-in duration-300" aria-label="Card editor panel">
       <header className="border-b border-muted-foreground/10 pb-6 mb-2">
-        <div className="flex items-center gap-2 mb-2">
-          <span className="flex items-center justify-center bg-primary/10 text-primary h-6 px-2 rounded font-bold text-[10px] tracking-wider uppercase ring-1 ring-primary/20">内容编辑器</span>
-          <p className="text-xs text-muted-foreground font-mono bg-muted/40 px-2 py-0.5 rounded border">{card.path}</p>
+        <div className="flex justify-between items-start">
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="flex items-center justify-center bg-primary/10 text-primary h-6 px-2 rounded font-bold text-[10px] tracking-wider uppercase ring-1 ring-primary/20">内容编辑器</span>
+              <p className="text-xs text-muted-foreground font-mono bg-muted/40 px-2 py-0.5 rounded border">{card.path}</p>
+            </div>
+            <h2 className="text-3xl font-black tracking-tight text-foreground">{String(card.data.title ?? '').trim() || card.id || '无标题记录'}</h2>
+          </div>
+          {onDeleteCard && (
+            <button
+              onClick={() => {
+                if (window.confirm(`确定要删除卡片 "${String(card.data.title ?? '').trim() || card.id}" 吗？此操作将只能在撤销历史中恢复。`)) {
+                  onDeleteCard(card.id);
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-destructive bg-destructive/10 border border-destructive/20 rounded-md hover:bg-destructive hover:text-destructive-foreground transition-colors shadow-sm"
+              title="删除此卡片"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+              <span>删除卡片</span>
+            </button>
+          )}
         </div>
-        <h2 className="text-3xl font-black tracking-tight text-foreground">{String(card.data.title ?? '').trim() || card.id || '无标题记录'}</h2>
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5 bg-card border rounded-xl p-6 shadow-sm">
@@ -428,6 +550,7 @@ export function CardEditorPanel({
           <div className="flex gap-2">
             <button
               type="button"
+              aria-label="Add Attachment"
               className="h-8 px-3 rounded-md border bg-background text-xs font-semibold shadow-sm hover:bg-muted transition-colors"
               onClick={() => {
                 const nextRows = [...attachmentRows, { name: '', url: '', type: '' }];
@@ -478,6 +601,7 @@ export function CardEditorPanel({
                   <span className="text-xs font-black uppercase text-primary">附件 {index + 1}</span>
                   <button
                     type="button"
+                    aria-label={`Remove Attachment ${index + 1}`}
                     className="text-xs text-destructive hover:underline font-semibold"
                     onClick={() => {
                       const nextRows = attachmentRows.filter((_, rowIndex) => rowIndex !== index);
@@ -515,6 +639,7 @@ export function CardEditorPanel({
                     className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     aria-label={`Attachment URL ${index + 1}`}
                     type="text"
+                    list={availableAttachmentOptions.length > 0 ? attachmentUrlListId : undefined}
                     value={attachment.url}
                     onChange={(event) => {
                       const nextRows = updateAttachmentRows(
@@ -528,9 +653,54 @@ export function CardEditorPanel({
                     }}
                   />
                 </label>
+
+                {availableAttachmentOptions.length > 0 ? (
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-xs font-bold text-muted-foreground">从已同步附件中选择</span>
+                    <select
+                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      aria-label={`Attachment Asset ${index + 1}`}
+                      value={availableAttachmentOptions.some((option) => option.relativeUrl === attachment.url) ? attachment.url : ''}
+                      onChange={(event) => {
+                        const selectedOption = availableAttachmentOptions.find((option) => option.relativeUrl === event.target.value);
+
+                        if (!selectedOption) {
+                          return;
+                        }
+
+                        const nextRows = attachmentRows.map((row, rowIndex) => rowIndex === index
+                          ? {
+                            ...row,
+                            name: row.name.trim() || selectedOption.fileName,
+                            url: selectedOption.relativeUrl,
+                            type: row.type.trim() || selectedOption.type,
+                          }
+                          : row);
+
+                        setAttachmentRows(nextRows);
+                        onFieldChange('attachments', toAttachmentInputs(nextRows));
+                      }}
+                    >
+                      <option value="">选择一个已同步文件</option>
+                      {availableAttachmentOptions.map((option) => (
+                        <option key={option.path} value={option.relativeUrl}>
+                          {option.relativeUrl}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
               </div>
             ))
           )}
+
+          {availableAttachmentOptions.length > 0 ? (
+            <datalist id={attachmentUrlListId}>
+              {availableAttachmentOptions.map((option) => (
+                <option key={option.path} value={option.relativeUrl} />
+              ))}
+            </datalist>
+          ) : null}
 
           {renderMessages(attachmentMessages(mergedIssues))}
         </div>
@@ -547,6 +717,7 @@ export function CardEditorPanel({
             onChange={(value) => onBodyChange(value ?? '')}
             height={400}
             minHeight={300}
+            previewOptions={previewOptions}
             textareaProps={{
               placeholder: '在这里输入 Markdown 内容...',
               'aria-label': 'Markdown Body',

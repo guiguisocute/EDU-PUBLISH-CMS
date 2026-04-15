@@ -264,7 +264,10 @@ export const ArticleCard: React.FC<ArticleCardProps> = React.memo(({
             {isCompactNoCover ? (
               <span
                 className={cn(
-                  'inline-flex h-5 items-center justify-center text-center leading-none rounded font-semibold border shrink-0 whitespace-nowrap text-[10px] px-2 transition-colors bg-background text-primary border-primary shadow-sm'
+                  'inline-flex h-5 items-center justify-center text-center leading-none rounded font-semibold border shrink-0 whitespace-nowrap text-[10px] px-2 transition-colors shadow-sm',
+                  timing.state === 'active'
+                    ? 'bg-primary text-primary-foreground border-transparent'
+                    : 'bg-background text-primary border-primary'
                 )}
               >
                 {primaryCategory}
@@ -277,7 +280,10 @@ export const ArticleCard: React.FC<ArticleCardProps> = React.memo(({
                   onCategoryClick?.(primaryCategory);
                 }}
                 className={cn(
-                  'inline-flex h-6 items-center justify-center text-center leading-none rounded font-semibold border transition-colors shrink-0 whitespace-nowrap text-[11px] px-2.5 bg-background text-primary border-primary shadow-sm'
+                  'inline-flex h-6 items-center justify-center text-center leading-none rounded font-semibold border transition-colors shrink-0 whitespace-nowrap text-[11px] px-2.5 shadow-sm',
+                  timing.state === 'active'
+                    ? 'bg-primary text-primary-foreground border-transparent hover:bg-primary/90'
+                    : 'bg-background text-primary border-primary'
                 )}
               >
                 {primaryCategory}

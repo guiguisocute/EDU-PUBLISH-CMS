@@ -22,6 +22,11 @@ interface GitHubRequestOptions {
   body?: BodyInit | null;
 }
 
+export interface GitHubTreeSnapshot {
+  entries: GitHubTreeEntry[];
+  truncated: boolean;
+}
+
 type FetchLike = typeof fetch;
 
 function getApiBaseUrl(env: WorkerEnv): string {
@@ -173,23 +178,27 @@ export async function getBranchHead(
   return { headSha, treeSha };
 }
 
-export async function getRecursiveTree(
+export async function getTreeEntries(
   repo: RepoRef,
   treeSha: string,
   accessToken: string,
   env: WorkerEnv,
+  options: {
+    recursive?: boolean;
+  } = {},
   fetchImpl: FetchLike = fetch,
-): Promise<GitHubTreeEntry[]> {
+): Promise<GitHubTreeSnapshot> {
+  const recursive = options.recursive ?? false;
   const payload = await fetchGitHubJson<Record<string, unknown>>(
     accessToken,
     env,
-    `/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}/git/trees/${treeSha}?recursive=1`,
+    `/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}/git/trees/${treeSha}${recursive ? '?recursive=1' : ''}`,
     {},
     fetchImpl,
   );
   const tree = Array.isArray(payload.tree) ? payload.tree : [];
 
-  return tree.flatMap((entry) => {
+  const entries = tree.flatMap((entry) => {
     if (!entry || typeof entry !== 'object') {
       return [];
     }
@@ -210,6 +219,30 @@ export async function getRecursiveTree(
       size: Number.isFinite(Number(record.size)) ? Number(record.size) : undefined,
     } satisfies GitHubTreeEntry];
   });
+
+  return {
+    entries,
+    truncated: Boolean(payload.truncated),
+  };
+}
+
+export async function getRecursiveTree(
+  repo: RepoRef,
+  treeSha: string,
+  accessToken: string,
+  env: WorkerEnv,
+  fetchImpl: FetchLike = fetch,
+): Promise<GitHubTreeEntry[]> {
+  const snapshot = await getTreeEntries(
+    repo,
+    treeSha,
+    accessToken,
+    env,
+    { recursive: true },
+    fetchImpl,
+  );
+
+  return snapshot.entries;
 }
 
 function decodeBase64Utf8(content: string): string {
@@ -246,4 +279,28 @@ export async function getBlobText(
   }
 
   return decodeBase64Utf8(content);
+}
+
+export async function getBlobBase64(
+  repo: RepoRef,
+  sha: string,
+  accessToken: string,
+  env: WorkerEnv,
+  fetchImpl: FetchLike = fetch,
+): Promise<string> {
+  const payload = await fetchGitHubJson<Record<string, unknown>>(
+    accessToken,
+    env,
+    `/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}/git/blobs/${sha}`,
+    {},
+    fetchImpl,
+  );
+  const encoding = String(payload.encoding || '').trim();
+  const content = String(payload.content || '');
+
+  if (encoding !== 'base64') {
+    throw new Error(`Unsupported blob encoding: ${encoding || 'unknown'}`);
+  }
+
+  return content.replace(/\s+/g, '');
 }

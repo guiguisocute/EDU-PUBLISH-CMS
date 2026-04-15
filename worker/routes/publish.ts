@@ -3,12 +3,13 @@ import { compileWorkspace } from '../../lib/content/preview-compiler';
 import {
   getBlobText,
   getBranchHead,
-  getRecursiveTree,
+  getTreeEntries,
 } from '../../lib/github/client';
 import {
   checkRepositoryCompatibility,
   selectWorkspaceEntries,
 } from '../../lib/github/compatibility';
+import { mergeWorkspaceStaticTreeEntries } from '../../lib/github/workspace-tree';
 import {
   publishAtomicCommit,
   readBranchRef,
@@ -35,7 +36,14 @@ async function loadWorkspaceSnapshot(
   env: Parameters<WorkerRoute['handler']>[0]['env'],
 ): Promise<{ workspace: DraftWorkspace; headSha: string; treeSha: string }> {
   const { headSha, treeSha } = await getBranchHead(repo, branch, accessToken, env);
-  const treeEntries = await getRecursiveTree(repo, treeSha, accessToken, env);
+  const treeSnapshot = await getTreeEntries(repo, treeSha, accessToken, env, { recursive: true });
+  const treeEntries = await mergeWorkspaceStaticTreeEntries(
+    repo,
+    treeSha,
+    accessToken,
+    env,
+    treeSnapshot.entries,
+  );
   const compatibility = checkRepositoryCompatibility(treeEntries);
 
   if (!compatibility.compatible) {

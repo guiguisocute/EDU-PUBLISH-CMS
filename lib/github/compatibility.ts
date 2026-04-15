@@ -16,12 +16,31 @@ const REQUIRED_FILES = [
   'config/subscriptions.yaml',
 ] as const;
 
+const ROOT_STATIC_IMAGE_PATH_PATTERN = /^(?:[^/]+)\.(?:avif|bmp|gif|ico|jpe?g|png|svg|webp)$/i;
+
+function normalizeWorkspacePath(path: string): string {
+  return String(path || '').trim().replace(/\\/g, '/').replace(/^\/+/, '');
+}
+
 export function isCardMarkdownPath(path: string): boolean {
-  return path.startsWith('content/card/') && path.endsWith('.md');
+  const normalized = normalizeWorkspacePath(path);
+  return normalized.startsWith('content/card/') && normalized.endsWith('.md');
+}
+
+export function isWorkspaceStaticAssetPath(path: string): boolean {
+  const normalized = normalizeWorkspacePath(path);
+
+  return normalized.startsWith('img/')
+    || normalized.startsWith('public/img/')
+    || normalized.startsWith('content/img/')
+    || ROOT_STATIC_IMAGE_PATH_PATTERN.test(normalized);
 }
 
 export function isAttachmentPath(path: string): boolean {
-  return path.startsWith('content/attachments/');
+  const normalized = normalizeWorkspacePath(path);
+
+  return normalized.startsWith('content/attachments/')
+    || isWorkspaceStaticAssetPath(normalized);
 }
 
 export function checkRepositoryCompatibility(

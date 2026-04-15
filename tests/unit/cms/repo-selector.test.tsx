@@ -7,6 +7,8 @@ describe('RepoSelector', () => {
     const onRepoChange = vi.fn();
     const onBranchChange = vi.fn();
     const onLoadWorkspace = vi.fn();
+    const onContinueAssetSync = vi.fn();
+    const onSkipAssetSync = vi.fn();
 
     render(
       <RepoSelector
@@ -30,6 +32,9 @@ describe('RepoSelector', () => {
         isLoadingRepos={false}
         isLoadingBranches={false}
         isLoadingWorkspace={false}
+        workspaceLoadProgress={null}
+        onContinueAssetSync={onContinueAssetSync}
+        onSkipAssetSync={onSkipAssetSync}
         onRepoChange={onRepoChange}
         onBranchChange={onBranchChange}
         onLoadWorkspace={onLoadWorkspace}
@@ -63,6 +68,9 @@ describe('RepoSelector', () => {
         isLoadingRepos={false}
         isLoadingBranches={false}
         isLoadingWorkspace={false}
+        workspaceLoadProgress={null}
+        onContinueAssetSync={() => undefined}
+        onSkipAssetSync={() => undefined}
         onRepoChange={() => undefined}
         onBranchChange={() => undefined}
         onLoadWorkspace={() => undefined}
@@ -71,5 +79,42 @@ describe('RepoSelector', () => {
 
     expect(screen.getByLabelText('Branch')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Load Workspace' })).toBeDisabled();
+  });
+
+  it('shows inline asset sync actions inside the progress panel', () => {
+    const onContinueAssetSync = vi.fn();
+    const onSkipAssetSync = vi.fn();
+
+    render(
+      <RepoSelector
+        repos={[]}
+        branches={[]}
+        selectedRepoFullName="octocat/edu-publish-main"
+        selectedBranch="main"
+        isLoadingRepos={false}
+        isLoadingBranches={false}
+        isLoadingWorkspace={false}
+        workspaceLoadProgress={{
+          phase: 'confirm',
+          message: '卡片元数据已同步，是否继续同步图片与附件资源？',
+          loadedAssets: 0,
+          totalAssets: 3,
+          loadedBytes: 0,
+          totalBytes: 3072,
+          percent: 14,
+        }}
+        onContinueAssetSync={onContinueAssetSync}
+        onSkipAssetSync={onSkipAssetSync}
+        onRepoChange={() => undefined}
+        onBranchChange={() => undefined}
+        onLoadWorkspace={() => undefined}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '继续同步资源' }));
+    fireEvent.click(screen.getByRole('button', { name: '跳过，按旧逻辑继续' }));
+
+    expect(onContinueAssetSync).toHaveBeenCalledTimes(1);
+    expect(onSkipAssetSync).toHaveBeenCalledTimes(1);
   });
 });

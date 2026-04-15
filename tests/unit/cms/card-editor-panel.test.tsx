@@ -111,8 +111,8 @@ attachments:
       />,
     );
 
-    expect(screen.getByText('Title is required.')).toBeInTheDocument();
-    expect(screen.getByText('Published must be a valid date.')).toBeInTheDocument();
+    expect(screen.getByText('【标题】 不能为空。')).toBeInTheDocument();
+    expect(screen.getByText('【发布时间】 必须是一个有效的日期。')).toBeInTheDocument();
     expect(screen.getByText('Attachment 1 must include both a name and a URL.')).toBeInTheDocument();
     expect(screen.getByText('Title must not be empty.')).toBeInTheDocument();
   });
@@ -180,10 +180,75 @@ attachments:
       },
     });
 
-    const attachmentsSection = screen.getByRole('heading', { name: 'Attachments' }).closest('section');
+    const attachmentsSection = screen.getByRole('heading', { name: /Attachments/ }).closest('section');
 
     expect(attachmentsSection).not.toBeNull();
     expect(within(attachmentsSection as HTMLElement).getByDisplayValue('guide.pdf')).toBeInTheDocument();
     expect(within(attachmentsSection as HTMLElement).getByDisplayValue('./attachments/guide.pdf')).toBeInTheDocument();
+  });
+
+  it('allows selecting an already synced attachment path from the editor dropdown', () => {
+    const onFieldChange = vi.fn();
+
+    render(
+      <CardEditorPanel
+        card={createCard()}
+        issues={[]}
+        onFieldChange={onFieldChange}
+        onBodyChange={() => undefined}
+        workspaceRepo={{ owner: 'octocat', name: 'edu-publish-main' }}
+        workspaceAttachments={[
+          {
+            path: 'content/attachments/forms/apply.docx',
+            sha: 'blob-apply',
+            size: 2048,
+          },
+        ]}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Attachment Asset 1'), {
+      target: { value: './attachments/forms/apply.docx' },
+    });
+
+    expect(onFieldChange).toHaveBeenLastCalledWith('attachments', [
+      {
+        name: 'Existing attachment',
+        url: './attachments/forms/apply.docx',
+        type: 'docx',
+      },
+    ]);
+  });
+
+  it('rewrites markdown image urls to workspace blob urls inside the editor preview', async () => {
+    const imageCard = createCard({
+      raw: `---
+id: notice-1
+school_slug: demo
+title: First notice
+published: 2026-04-14T09:00:00+08:00
+---
+![正文配图](/img/ai/photo.jpg)
+`,
+    });
+
+    render(
+      <CardEditorPanel
+        card={imageCard}
+        issues={[]}
+        onFieldChange={() => undefined}
+        onBodyChange={() => undefined}
+        workspaceRepo={{ owner: 'octocat', name: 'edu-publish-main' }}
+        workspaceBranch="main"
+        workspaceAttachments={[]}
+      />,
+    );
+
+    const image = await screen.findByAltText('正文配图');
+
+    expect(image).toHaveAttribute(
+      'src',
+      '/api/workspace/blob?owner=octocat&name=edu-publish-main&branch=main&candidate=img%2Fai%2Fphoto.jpg&candidate=public%2Fimg%2Fai%2Fphoto.jpg',
+    );
   });
 });

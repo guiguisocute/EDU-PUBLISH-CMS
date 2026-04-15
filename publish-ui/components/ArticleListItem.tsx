@@ -191,7 +191,11 @@ export const ArticleListItem: React.FC<ArticleListItemProps> = React.memo(({
                 event.stopPropagation();
                 onCategoryClick?.(primaryCategory);
               }}
-              className="inline-flex h-5 items-center rounded text-[10px] font-semibold px-2 transition-colors bg-background text-primary border border-primary shadow-sm"
+              className={`inline-flex h-5 items-center rounded text-[10px] font-semibold px-2 transition-colors border shadow-sm ${
+                timing.state === 'active'
+                  ? 'bg-primary text-primary-foreground border-transparent hover:bg-primary/90'
+                  : 'bg-background text-primary border-primary'
+              }`}
             >
               {primaryCategory}
             </button>
@@ -207,7 +211,7 @@ export const ArticleListItem: React.FC<ArticleListItemProps> = React.memo(({
                   }}
                   className="inline-flex h-5 items-center rounded text-[10px] font-medium px-2 border transition-colors bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 dark:hover:bg-slate-700"
                 >
-                  {tag}
+                  #{tag}
                 </button>
               ))}
           </div>

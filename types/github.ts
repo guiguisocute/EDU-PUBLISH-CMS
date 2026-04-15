@@ -56,8 +56,38 @@ export interface WorkspaceAttachmentFile {
   size: number;
   encoding?: 'base64';
   content?: string;
+  previewUrl?: string;
   dirty?: boolean;
   deleted?: boolean;
+}
+
+export interface WorkspaceAssetRequestEntry {
+  path: string;
+  sha: string;
+  size: number;
+}
+
+export interface WorkspaceAssetLoadRequest {
+  repo: RepoRef;
+  assets: WorkspaceAssetRequestEntry[];
+}
+
+export interface WorkspaceAssetLoadResponse {
+  assets: Array<WorkspaceAssetRequestEntry & {
+    encoding: 'base64';
+    content: string;
+  }>;
+}
+
+export interface WorkspaceLoadProgress {
+  phase: 'metadata' | 'confirm' | 'assets';
+  message: string;
+  loadedAssets: number;
+  totalAssets: number;
+  loadedBytes: number;
+  totalBytes: number;
+  percent: number;
+  currentPath?: string;
 }
 
 export interface DraftWorkspace {

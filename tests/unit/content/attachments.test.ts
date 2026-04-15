@@ -35,7 +35,7 @@ describe('attachment normalization', () => {
   it('rejects suspicious attachment paths', () => {
     expect(() =>
       normalizeAttachments(['./attachments/%2e%2e/secrets.txt'], 'content/card/demo.md'),
-    ).toThrow(/Suspicious path/);
+    ).toThrow(/Path traversal detected|Suspicious path/);
   });
 });
 
@@ -78,6 +78,29 @@ describe('inline attachment extraction', () => {
         name: '[分享] 群公告链接',
         url: '#',
         type: 'link',
+      },
+    ]);
+  });
+
+  it('preserves repo-relative inline asset paths outside the attachments folder', () => {
+    const inlineAttachments = extractInlineAttachments(
+      `
+![正文配图](./poster.png)
+[共享横幅](../shared/banner.png)
+`,
+      'content/card/demo/notice.md',
+    );
+
+    expect(inlineAttachments).toEqual([
+      {
+        name: '正文配图',
+        url: './poster.png',
+        type: 'image',
+      },
+      {
+        name: '共享横幅',
+        url: '../shared/banner.png',
+        type: 'image',
       },
     ]);
   });

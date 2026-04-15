@@ -22,9 +22,13 @@ import type {
   PublishRequest,
   PublishResult,
   GitHubRepositorySummary,
+  WorkspaceAssetLoadRequest,
+  WorkspaceAssetLoadResponse,
   WorkspaceLoadRequest,
   WorkspaceAttachmentFile,
+  WorkspaceLoadProgress,
 } from '../types/github';
+import { getWorkspaceAssetMimeType, isImageMimeType, toDataUrl } from '../lib/content/workspace-assets';
 
 interface ReposResponse {
   repos: GitHubRepositorySummary[];
@@ -69,6 +73,68 @@ async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
   }
 
   return response.json() as Promise<T>;
+}
+
+const WORKSPACE_ASSET_BATCH_SIZE = 12;
+const METADATA_PROGRESS_PERCENT = 14;
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  if (size <= 0) {
+    return [items.slice()];
+  }
+
+  const chunks: T[][] = [];
+
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+
+  return chunks;
+}
+
+function createPreviewUrlFromBase64(path: string, content: string): string {
+  const normalized = String(content || '').replace(/\s+/g, '');
+  const mimeType = getWorkspaceAssetMimeType(path);
+
+  if (isImageMimeType(mimeType)) {
+    return toDataUrl(path, normalized);
+  }
+
+  if (typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') {
+    return toDataUrl(path, normalized);
+  }
+
+  const binary = atob(normalized);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return URL.createObjectURL(new Blob([bytes], { type: mimeType }));
+}
+
+function revokePreviewUrl(url: string | undefined): void {
+  if (!url || !url.startsWith('blob:')) {
+    return;
+  }
+
+  if (typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function applyPreviewUrlsToWorkspace(
+  targetWorkspace: DraftWorkspace,
+  previewUrlByPath: Map<string, string>,
+): DraftWorkspace {
+  return {
+    ...targetWorkspace,
+    attachments: targetWorkspace.attachments.map((attachment) => ({
+      ...attachment,
+      previewUrl: previewUrlByPath.get(attachment.path) || attachment.previewUrl,
+    })),
+  };
 }
 
 function setNestedValue(target: Record<string, unknown>, path: string, value: unknown): void {
@@ -150,6 +216,7 @@ export interface DraftWorkspaceController {
   compileResult: PreviewCompileResult;
   validationIssues: ValidationIssue[];
   diagnostics: DraftWorkspaceDiagnostics;
+  workspaceLoadProgress: WorkspaceLoadProgress | null;
   isLoadingRepos: boolean;
   isLoadingBranches: boolean;
   isLoadingWorkspace: boolean;
@@ -166,11 +233,15 @@ export interface DraftWorkspaceController {
   selectRepo: (fullName: string) => Promise<void>;
   selectBranch: (branchName: string) => void;
   loadWorkspace: () => Promise<void>;
+  continueWorkspaceAssetSync: () => Promise<void>;
+  skipWorkspaceAssetSync: () => void;
   selectCard: (cardId: string) => void;
   updateField: (fieldPath: string, value: unknown) => void;
   updateBody: (markdown: string) => void;
   uploadAttachmentFiles: (files: FileList | File[]) => Promise<void>;
   discardDraft: (cardId?: string) => void;
+  addCard: (cardData?: Partial<CardFrontmatter>) => void;
+  deleteCard: (cardId: string) => void;
   discardAllChanges: () => void;
   undo: () => void;
   redo: () => void;
@@ -345,10 +416,13 @@ export function useDraftWorkspace(): DraftWorkspaceController {
   const [selectedBranch, setSelectedBranch] = useState('');
   const [workspace, setWorkspace] = useState<DraftWorkspace | null>(null);
   const [originalWorkspace, setOriginalWorkspace] = useState<DraftWorkspace | null>(null);
+  const [pendingWorkspace, setPendingWorkspace] = useState<DraftWorkspace | null>(null);
+  const [pendingOriginalWorkspace, setPendingOriginalWorkspace] = useState<DraftWorkspace | null>(null);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [isLoadingRepos, setIsLoadingRepos] = useState(false);
   const [isLoadingBranches, setIsLoadingBranches] = useState(false);
   const [isLoadingWorkspace, setIsLoadingWorkspace] = useState(false);
+  const [workspaceLoadProgress, setWorkspaceLoadProgress] = useState<WorkspaceLoadProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [targetBranch, setTargetBranch] = useState('');
   const [commitMessage, setCommitMessage] = useState(defaultCommitMessage(0));
@@ -361,6 +435,7 @@ export function useDraftWorkspace(): DraftWorkspaceController {
   const selectedRepoFullNameRef = useRef(selectedRepoFullName);
   const selectedBranchRef = useRef(selectedBranch);
   const historyRef = useRef(history);
+  const previewUrlsRef = useRef<Set<string>>(new Set());
 
   reposRef.current = repos;
   selectedRepoFullNameRef.current = selectedRepoFullName;
@@ -433,7 +508,7 @@ export function useDraftWorkspace(): DraftWorkspaceController {
         const originalKey = originalAttachments.get(attachment.path);
         const currentKey = `${attachment.sha}:${attachment.size}:${attachment.deleted ? 'deleted' : 'present'}`;
 
-        return attachment.dirty || originalKey !== currentKey || Boolean(attachment.content);
+        return attachment.dirty || originalKey !== currentKey;
       })
       .map((attachment) => attachment.path)
       .sort((left, right) => left.localeCompare(right, 'zh-CN'));
@@ -464,10 +539,55 @@ export function useDraftWorkspace(): DraftWorkspaceController {
     }
   }, [selectedCardId, workspace]);
 
+  useEffect(() => {
+    const nextUrls = new Set(
+      [
+        ...(workspace?.attachments || []),
+        ...(pendingWorkspace?.attachments || []),
+      ]
+        .map((attachment) => attachment.previewUrl)
+        .filter((url): url is string => Boolean(url)),
+    );
+
+    for (const url of previewUrlsRef.current) {
+      if (!nextUrls.has(url)) {
+        revokePreviewUrl(url);
+      }
+    }
+
+    previewUrlsRef.current = nextUrls;
+  }, [pendingWorkspace, workspace]);
+
+  useEffect(() => {
+    return () => {
+      for (const url of previewUrlsRef.current) {
+        revokePreviewUrl(url);
+      }
+      previewUrlsRef.current.clear();
+    };
+  }, []);
+
   function resetHistory(): void {
     const nextHistory = { past: [], future: [] };
     historyRef.current = nextHistory;
     setHistory(nextHistory);
+  }
+
+  function activateWorkspace(
+    nextWorkspace: DraftWorkspace,
+    nextOriginalWorkspace: DraftWorkspace,
+  ): void {
+    setWorkspace(nextWorkspace);
+    setOriginalWorkspace(nextOriginalWorkspace);
+    setPendingWorkspace(null);
+    setPendingOriginalWorkspace(null);
+    resetHistory();
+    setSelectedCardId(nextWorkspace.cards[0]?.id || null);
+    setTargetBranch(nextWorkspace.branch);
+    setCommitMessage(defaultCommitMessage(0));
+    setHasCustomCommitMessage(false);
+    setPublishError(null);
+    setPublishResult(null);
   }
 
   function commitWorkspaceUpdate(
@@ -494,6 +614,112 @@ export function useDraftWorkspace(): DraftWorkspaceController {
     });
   }
 
+  async function hydrateWorkspaceAssets(nextWorkspace: DraftWorkspace): Promise<DraftWorkspace> {
+    const hydratableAssets = nextWorkspace.attachments.filter(
+      (attachment) => !attachment.deleted && Boolean(attachment.sha),
+    );
+    const assetsToLoad = hydratableAssets.filter((attachment) => !attachment.previewUrl);
+
+    if (assetsToLoad.length === 0) {
+      return nextWorkspace;
+    }
+
+    const totalBytes = hydratableAssets.reduce((sum, attachment) => sum + Math.max(attachment.size || 0, 0), 0);
+    let loadedAssets = hydratableAssets.length - assetsToLoad.length;
+    let loadedBytes = hydratableAssets
+      .filter((attachment) => attachment.previewUrl)
+      .reduce((sum, attachment) => sum + Math.max(attachment.size || 0, 0), 0);
+    const previewUrlByPath = new Map(
+      nextWorkspace.attachments
+        .filter((attachment) => Boolean(attachment.previewUrl))
+        .map((attachment) => [attachment.path, attachment.previewUrl as string]),
+    );
+
+    setWorkspaceLoadProgress({
+      phase: 'assets',
+      message: '正在同步图片与附件资源...',
+      loadedAssets,
+      totalAssets: hydratableAssets.length,
+      loadedBytes,
+      totalBytes,
+      percent: totalBytes > 0
+        ? Math.min(
+          100,
+          Math.max(
+            METADATA_PROGRESS_PERCENT,
+            Math.round(METADATA_PROGRESS_PERCENT + (loadedBytes / totalBytes) * (100 - METADATA_PROGRESS_PERCENT)),
+          ),
+        )
+        : METADATA_PROGRESS_PERCENT,
+      currentPath: assetsToLoad[0]?.path,
+    });
+
+    for (const batch of chunkArray(assetsToLoad, WORKSPACE_ASSET_BATCH_SIZE)) {
+      const assetRequest: WorkspaceAssetLoadRequest = {
+        repo: nextWorkspace.repo,
+        assets: batch.map((attachment) => ({
+          path: attachment.path,
+          sha: attachment.sha,
+          size: attachment.size,
+        })),
+      };
+      const assetResponse = await requestJson<WorkspaceAssetLoadResponse>('/api/workspace/assets', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(assetRequest),
+      });
+
+      for (const asset of assetResponse.assets) {
+        previewUrlByPath.set(asset.path, createPreviewUrlFromBase64(asset.path, asset.content));
+        loadedAssets += 1;
+        loadedBytes += Math.max(asset.size || 0, 0);
+      }
+
+      setPendingWorkspace((currentWorkspace) => currentWorkspace
+        ? applyPreviewUrlsToWorkspace(currentWorkspace, previewUrlByPath)
+        : currentWorkspace);
+      setPendingOriginalWorkspace((currentWorkspace) => currentWorkspace
+        ? applyPreviewUrlsToWorkspace(currentWorkspace, previewUrlByPath)
+        : currentWorkspace);
+
+      const ratio = totalBytes > 0
+        ? loadedBytes / totalBytes
+        : loadedAssets / Math.max(hydratableAssets.length, 1);
+
+      setWorkspaceLoadProgress({
+        phase: 'assets',
+        message: '正在同步图片与附件资源...',
+        loadedAssets,
+        totalAssets: hydratableAssets.length,
+        loadedBytes,
+        totalBytes,
+        percent: Math.min(
+          100,
+          Math.max(
+            METADATA_PROGRESS_PERCENT,
+            Math.round(METADATA_PROGRESS_PERCENT + ratio * (100 - METADATA_PROGRESS_PERCENT)),
+          ),
+        ),
+        currentPath: batch.at(-1)?.path,
+      });
+    }
+
+    return applyPreviewUrlsToWorkspace(nextWorkspace, previewUrlByPath);
+  }
+
+  function mergeHydratedPreviewUrls(
+    baseWorkspace: DraftWorkspace,
+    hydratedWorkspace: DraftWorkspace,
+  ): DraftWorkspace {
+    const previewUrlByPath = new Map(
+      hydratedWorkspace.attachments.map((attachment) => [attachment.path, attachment.previewUrl]),
+    );
+
+    return applyPreviewUrlsToWorkspace(baseWorkspace, previewUrlByPath as Map<string, string>);
+  }
+
   async function loadRepos(): Promise<void> {
     setIsLoadingRepos(true);
     setError(null);
@@ -514,7 +740,10 @@ export function useDraftWorkspace(): DraftWorkspaceController {
     setSelectedRepoFullName(fullName);
     setWorkspace(null);
     setOriginalWorkspace(null);
+    setPendingWorkspace(null);
+    setPendingOriginalWorkspace(null);
     setSelectedCardId(null);
+    setWorkspaceLoadProgress(null);
     setBranches([]);
     setSelectedBranch('');
     setError(null);
@@ -551,7 +780,10 @@ export function useDraftWorkspace(): DraftWorkspaceController {
     setSelectedBranch(branchName);
     setWorkspace(null);
     setOriginalWorkspace(null);
+    setPendingWorkspace(null);
+    setPendingOriginalWorkspace(null);
     setSelectedCardId(null);
+    setWorkspaceLoadProgress(null);
     setError(null);
     resetHistory();
   }
@@ -568,6 +800,20 @@ export function useDraftWorkspace(): DraftWorkspaceController {
 
     setIsLoadingWorkspace(true);
     setError(null);
+    setWorkspace(null);
+    setOriginalWorkspace(null);
+    setPendingWorkspace(null);
+    setPendingOriginalWorkspace(null);
+    setSelectedCardId(null);
+    setWorkspaceLoadProgress({
+      phase: 'metadata',
+      message: '正在读取卡片与配置...',
+      loadedAssets: 0,
+      totalAssets: 0,
+      loadedBytes: 0,
+      totalBytes: 0,
+      percent: METADATA_PROGRESS_PERCENT,
+    });
 
     try {
       const requestBody: WorkspaceLoadRequest = {
@@ -586,21 +832,69 @@ export function useDraftWorkspace(): DraftWorkspaceController {
       });
       const original = cloneValue(response);
       const draft = cloneValue(response);
+      const totalAssets = response.attachments.filter((attachment) => !attachment.deleted && Boolean(attachment.sha)).length;
+      const totalBytes = response.attachments.reduce((sum, attachment) => sum + Math.max(attachment.size || 0, 0), 0);
 
-      setOriginalWorkspace(original);
-      setWorkspace(draft);
-      resetHistory();
-      setSelectedCardId(draft.cards[0]?.id || null);
-      setTargetBranch(draft.branch);
-      setCommitMessage(defaultCommitMessage(0));
-      setHasCustomCommitMessage(false);
-      setPublishError(null);
-      setPublishResult(null);
+      if (totalAssets > 0) {
+        setPendingOriginalWorkspace(original);
+        setPendingWorkspace(draft);
+        setWorkspaceLoadProgress({
+          phase: 'confirm',
+          message: '卡片元数据已同步，是否继续同步图片与附件资源？',
+          loadedAssets: 0,
+          totalAssets,
+          loadedBytes: 0,
+          totalBytes,
+          percent: METADATA_PROGRESS_PERCENT,
+        });
+      } else {
+        activateWorkspace(draft, original);
+        setWorkspaceLoadProgress(null);
+      }
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to load workspace.');
+      setPendingWorkspace(null);
+      setPendingOriginalWorkspace(null);
+      setWorkspaceLoadProgress(null);
     } finally {
       setIsLoadingWorkspace(false);
     }
+  }
+
+  async function continueWorkspaceAssetSync(): Promise<void> {
+    if (!pendingWorkspace || !pendingOriginalWorkspace || workspaceLoadProgress?.phase !== 'confirm') {
+      return;
+    }
+
+    setIsLoadingWorkspace(true);
+    setError(null);
+
+    try {
+      const hydratedWorkspace = await hydrateWorkspaceAssets(pendingWorkspace);
+      const hydratedOriginalWorkspace = mergeHydratedPreviewUrls(pendingOriginalWorkspace, hydratedWorkspace);
+
+      activateWorkspace(hydratedWorkspace, hydratedOriginalWorkspace);
+      setWorkspaceLoadProgress(null);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Failed to sync workspace assets.');
+      setWorkspaceLoadProgress((currentProgress) => currentProgress?.phase === 'assets'
+        ? {
+          ...currentProgress,
+          phase: 'confirm',
+          message: '资源同步失败，已保留已完成进度，可重试继续剩余资源。',
+        }
+        : currentProgress);
+    } finally {
+      setIsLoadingWorkspace(false);
+    }
+  }
+
+  function skipWorkspaceAssetSync(): void {
+    if (pendingWorkspace && pendingOriginalWorkspace) {
+      activateWorkspace(pendingWorkspace, pendingOriginalWorkspace);
+    }
+
+    setWorkspaceLoadProgress(null);
   }
 
   function selectCard(cardId: string): void {
@@ -660,6 +954,9 @@ export function useDraftWorkspace(): DraftWorkspaceController {
           content: await fileToBase64(file),
           size: file.size,
           type: inferAttachmentType(fileName),
+          previewUrl: typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'
+            ? URL.createObjectURL(file)
+            : undefined,
         };
       }),
     );
@@ -688,6 +985,7 @@ export function useDraftWorkspace(): DraftWorkspaceController {
           size: file.size,
           encoding: 'base64',
           content: file.content,
+          previewUrl: file.previewUrl,
           dirty: true,
           deleted: false,
         });
@@ -744,6 +1042,55 @@ export function useDraftWorkspace(): DraftWorkspaceController {
         ),
       };
     });
+  }
+
+
+  function addCard(cardData?: Partial<CardFrontmatter>): void {
+    if (!workspace) return;
+    const newId = `new-card-${Date.now()}`;
+    const data: CardFrontmatter = {
+      id: newId,
+      school_slug: 'all',
+      title: '新建卡片',
+      published: 'false',
+      created_at: new Date().toISOString(),
+      ...cardData,
+    };
+    
+    // Convert to CardDocument
+    const newCard: CardDocument = {
+      id: newId,
+      path: `content/cards/${newId}.md`,
+      sha: '',
+      raw: '---\n---\n',
+      frontmatterText: '---\n---\n',
+      bodyMarkdown: '',
+      keyOrder: ['id', 'school_slug', 'title', 'published', 'created_at'],
+      data,
+      dirty: true,
+    };
+    
+    commitWorkspaceUpdate((currentWorkspace) => {
+      return {
+        ...currentWorkspace,
+        cards: [newCard, ...currentWorkspace.cards]
+      };
+    });
+    setSelectedCardId(newId);
+  }
+
+  function deleteCard(cardId: string): void {
+    if (!workspace) return;
+    commitWorkspaceUpdate((currentWorkspace) => {
+      return {
+        ...currentWorkspace,
+        cards: currentWorkspace.cards.filter((card) => card.id !== cardId)
+      };
+    });
+    if (selectedCardId === cardId) {
+      const remaining = workspace.cards.filter((card) => card.id !== cardId);
+      setSelectedCardId(remaining.length > 0 ? remaining[0].id : null);
+    }
   }
 
   function discardAllChanges(): void {
@@ -914,6 +1261,7 @@ export function useDraftWorkspace(): DraftWorkspaceController {
     compileResult,
     validationIssues,
     diagnostics,
+    workspaceLoadProgress,
     isLoadingRepos,
     isLoadingBranches,
     isLoadingWorkspace,
@@ -930,11 +1278,15 @@ export function useDraftWorkspace(): DraftWorkspaceController {
     selectRepo,
     selectBranch,
     loadWorkspace,
+    continueWorkspaceAssetSync,
+    skipWorkspaceAssetSync,
     selectCard,
     updateField,
     updateBody,
     uploadAttachmentFiles,
     discardDraft,
+    addCard,
+    deleteCard,
     discardAllChanges,
     undo,
     redo,

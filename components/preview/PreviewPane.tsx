@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { adaptPreviewModel } from '../../lib/content/preview-adapter';
+import { buildDownloadFileName, isExternalUrl } from '../../lib/content/workspace-assets';
 import type { Article, CmsPreviewModel, ValidationIssue } from '../../types/content';
 
 export interface PreviewPaneProps {
@@ -17,12 +18,21 @@ function AttachmentSection({ article }: { article: Article }) {
       <h3>Attachments</h3>
       <ul>
         {article.attachments.map((attachment) => {
-          const hasLink = Boolean(attachment.url && attachment.url !== '#');
+          const href = String(attachment.downloadUrl || attachment.url || '');
+          const hasLink = Boolean(href && href !== '#');
+          const forceDownloadName = href.startsWith('blob:') || href.startsWith('data:')
+            ? buildDownloadFileName(attachment.name, href)
+            : undefined;
 
           return (
-            <li key={`${attachment.url}-${attachment.name}`}>
+            <li key={`${href}-${attachment.name}`}>
               {hasLink ? (
-                <a href={attachment.url} target="_blank" rel="noreferrer">
+                <a
+                  href={href}
+                  target={isExternalUrl(href) ? '_blank' : undefined}
+                  rel={isExternalUrl(href) ? 'noreferrer noopener' : undefined}
+                  download={isExternalUrl(href) ? undefined : forceDownloadName}
+                >
                   <span>{attachment.name}</span>
                   <span>{attachment.type || 'file'}</span>
                 </a>
