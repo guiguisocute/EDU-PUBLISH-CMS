@@ -2,6 +2,7 @@ import { parseCardDocument } from '../../lib/content/card-document';
 import {
   getBlobBase64,
   getBlobText,
+  getMultipleBlobText,
   getBranchHead,
   getTreeEntries,
 } from '../../lib/github/client';
@@ -270,20 +271,19 @@ export const workspaceRoutes: WorkerRoute[] = [
       ]);
 
       const cards = [];
-      const batchSize = 10;
+      const batchSize = 40;
       for (let i = 0; i < cardEntries.length; i += batchSize) {
         const batch = cardEntries.slice(i, i + batchSize);
-        const batchResults = await Promise.all(
-          batch.map(async (entry) => {
-            const raw = await getBlobText(repo, entry.sha, session.accessToken, env);
-            return parseCardDocument(raw, {
-              path: entry.path,
-              sha: entry.sha,
-              dirty: false,
-            });
-          })
-        );
-        cards.push(...batchResults);
+        const map = await getMultipleBlobText(repo, batch.map(e => e.sha), session.accessToken, env);
+        
+        for (const entry of batch) {
+          const raw = map.get(entry.sha) ?? '';
+          cards.push(parseCardDocument(raw, {
+            path: entry.path,
+            sha: entry.sha,
+            dirty: false,
+          }));
+        }
       }
 
       return Response.json({

@@ -304,3 +304,57 @@ export async function getBlobBase64(
 
   return content.replace(/\s+/g, '');
 }
+
+export async function getMultipleBlobText(
+  repo: RepoRef,
+  shas: string[],
+  accessToken: string,
+  env: WorkerEnv,
+  fetchImpl: FetchLike = fetch,
+): Promise<Map<string, string>> {
+  if (shas.length === 0) return new Map();
+
+  const queryParts = shas.map((sha, idx) => `blob${idx}: object(oid: "${sha}") { ... on Blob { text } }`);
+  
+  const query = `
+    query($owner: String!, $name: String!) {
+      repository(owner: $owner, name: $name) {
+        ${queryParts.join('\n        ')}
+      }
+    }
+  `;
+
+  const response = await fetchImpl('https://api.github.com/graphql', {
+    method: 'POST',
+    headers: createAuthHeaders(accessToken),
+    body: JSON.stringify({
+      query,
+      variables: {
+        owner: repo.owner,
+        name: repo.name,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`GitHub GraphQL request failed (${response.status})`);
+  }
+
+  const payload = await (response.json() as Promise<Record<string, any>>);
+  if (payload.errors && payload.errors.length > 0) {
+    throw new Error('GraphQL error: ' + payload.errors[0].message);
+  }
+
+  const result = new Map<string, string>();
+  const repoData = payload.data?.repository || {};
+  
+  for (let i = 0; i < shas.length; i++) {
+    const blobKey = `blob${i}`;
+    const blobNode = repoData[blobKey];
+    if (blobNode && typeof blobNode.text === 'string') {
+      result.set(shas[i], blobNode.text);
+    }
+  }
+
+  return result;
+}
