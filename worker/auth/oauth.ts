@@ -51,7 +51,14 @@ export async function createGitHubAuthorizationRequest(env: WorkerEnv): Promise<
   authorizationUrl: string;
 }> {
   const clientId = getRequiredEnvValue(env, 'GITHUB_CLIENT_ID');
-  const redirectUri = getRequiredEnvValue(env, 'GITHUB_REDIRECT_URI');
+  const redirectUri = env.GITHUB_REDIRECT_URI
+    ? String(env.GITHUB_REDIRECT_URI).trim()
+    : `${String(env.APP_URL || '').replace(/\/+$/, '')}/api/auth/github/callback`;
+    
+  if (!redirectUri || redirectUri === '/api/auth/github/callback') {
+    throw new Error('GITHUB_REDIRECT_URI or APP_URL is required.');
+  }
+
   const state = createRandomValue(24);
   const codeVerifier = createRandomValue(48);
   const codeChallenge = await createPkceChallenge(codeVerifier);
@@ -80,7 +87,9 @@ export async function exchangeCodeForAccessToken(
 ): Promise<string> {
   const clientId = getRequiredEnvValue(env, 'GITHUB_CLIENT_ID');
   const clientSecret = getRequiredEnvValue(env, 'GITHUB_CLIENT_SECRET');
-  const redirectUri = getRequiredEnvValue(env, 'GITHUB_REDIRECT_URI');
+  const redirectUri = env.GITHUB_REDIRECT_URI
+    ? String(env.GITHUB_REDIRECT_URI).trim()
+    : `${String(env.APP_URL || '').replace(/\/+$/, '')}/api/auth/github/callback`;
   const response = await fetchImpl(`${getOauthBaseUrl(env)}/access_token`, {
     method: 'POST',
     headers: {
