@@ -60,17 +60,17 @@ export function RepoSelector({
   return (
     <section className="w-full bg-background rounded-lg border shadow-sm px-3 py-2" aria-label="Repository workspace selector">
       <h2 className="sr-only">Repository Workspace</h2>
-      <div className="flex items-center gap-3">
-        <div className="hidden sm:block whitespace-nowrap">
+      <div className="flex flex-col md:flex-row gap-3 md:items-center">
+        <div className="whitespace-nowrap shrink-0 hidden md:block">
           <p className="text-[10px] font-bold text-primary tracking-wider uppercase mb-0.5">工作区绑定</p>
-          <span className="text-xs text-muted-foreground mr-2 font-medium">选择数据来源</span>
+          <span className="text-xs text-muted-foreground font-medium">选择数据来源</span>
         </div>
 
-        <div className="flex flex-1 items-center gap-2 flex-wrap sm:flex-nowrap">
-          <label className="flex flex-1 items-center gap-2 text-sm bg-muted/30 px-2 py-1 rounded">
+        <div className="flex flex-1 items-center gap-2 flex-wrap sm:flex-nowrap min-w-0">
+          <label className="flex flex-[2] min-w-[160px] items-center gap-2 text-sm bg-muted/30 px-2 py-1 rounded">
             <span className="font-semibold text-muted-foreground shrink-0 text-xs uppercase tracking-wider">仓库</span>
             <select
-              className="flex h-7 w-full min-w-[120px] rounded-md border border-input bg-background px-2 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+              className="flex h-7 w-full min-w-0 rounded-md border border-input bg-background pl-2 pr-6 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50 truncate"
               aria-label="Repository"
               value={selectedRepoFullName}
               disabled={isLoadingRepos}
@@ -85,10 +85,10 @@ export function RepoSelector({
             </select>
           </label>
 
-          <label className="flex items-center gap-2 text-sm bg-muted/30 px-2 py-1 rounded">
+          <label className="flex flex-1 min-w-[120px] items-center gap-2 text-sm bg-muted/30 px-2 py-1 rounded">
             <span className="font-semibold text-muted-foreground shrink-0 text-xs uppercase tracking-wider">分支</span>
             <select
-              className="flex h-7 w-[100px] rounded-md border border-input bg-background px-2 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+              className="flex h-7 w-full min-w-0 rounded-md border border-input bg-background pl-2 pr-6 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50 truncate"
               aria-label="Branch"
               value={selectedBranch}
               disabled={!hasSelectedRepo || isLoadingBranches}
@@ -104,7 +104,7 @@ export function RepoSelector({
           </label>
 
           <button
-            className="h-7 px-3 rounded-md bg-secondary text-secondary-foreground text-xs font-bold shadow-sm hover:bg-secondary/80 disabled:opacity-50 shrink-0"
+            className="h-7 px-3 rounded-md bg-secondary text-secondary-foreground text-xs font-bold shadow-sm hover:bg-secondary/80 disabled:opacity-50 shrink-0 w-full sm:w-auto"
             type="button"
             aria-label="Load Workspace"
             disabled={!canLoadWorkspace}

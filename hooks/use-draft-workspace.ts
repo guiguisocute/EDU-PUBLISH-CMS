@@ -204,6 +204,11 @@ function replaceCard(
   };
 }
 
+export interface FileChangeInfo {
+  path: string;
+  type: 'added' | 'modified' | 'deleted';
+}
+
 export interface DraftWorkspaceController {
   repos: GitHubRepositorySummary[];
   branches: GitHubBranchSummary[];
@@ -221,7 +226,7 @@ export interface DraftWorkspaceController {
   isLoadingBranches: boolean;
   isLoadingWorkspace: boolean;
   error: string | null;
-  changedFiles: string[];
+  changedFiles: FileChangeInfo[];
   targetBranch: string;
   commitMessage: string;
   isPublishing: boolean;
@@ -486,16 +491,30 @@ export function useDraftWorkspace(): DraftWorkspaceController {
     () => workspace?.cards.filter((card) => card.dirty).length || 0,
     [workspace],
   );
-  const changedFiles = useMemo(() => {
+  const changedFiles = useMemo<FileChangeInfo[]>(() => {
     if (!workspace || !originalWorkspace) {
       return [];
     }
 
     const originalByPath = new Map(originalWorkspace.cards.map((card) => [card.path, card.raw]));
-    const cardFiles = workspace.cards
-      .filter((card) => originalByPath.get(card.path) !== card.raw)
-      .map((card) => card.path)
-      .sort((left, right) => left.localeCompare(right, 'zh-CN'));
+    const currentByPath = new Map(workspace.cards.map((card) => [card.path, card.raw]));
+    
+    const cardFiles: FileChangeInfo[] = [];
+    
+    workspace.cards.forEach(card => {
+      const original = originalByPath.get(card.path);
+      if (original === undefined) {
+        cardFiles.push({ path: card.path, type: 'added' });
+      } else if (original !== card.raw) {
+        cardFiles.push({ path: card.path, type: 'modified' });
+      }
+    });
+
+    originalWorkspace.cards.forEach(card => {
+      if (!currentByPath.has(card.path)) {
+        cardFiles.push({ path: card.path, type: 'deleted' });
+      }
+    });
 
     const originalAttachments = new Map(
       originalWorkspace.attachments.map((attachment) => [
@@ -503,17 +522,24 @@ export function useDraftWorkspace(): DraftWorkspaceController {
         `${attachment.sha}:${attachment.size}:${attachment.deleted ? 'deleted' : 'present'}`,
       ]),
     );
-    const attachmentFiles = workspace.attachments
-      .filter((attachment) => {
-        const originalKey = originalAttachments.get(attachment.path);
-        const currentKey = `${attachment.sha}:${attachment.size}:${attachment.deleted ? 'deleted' : 'present'}`;
 
-        return attachment.dirty || originalKey !== currentKey;
-      })
-      .map((attachment) => attachment.path)
-      .sort((left, right) => left.localeCompare(right, 'zh-CN'));
+    const attachmentFiles: FileChangeInfo[] = [];
+    workspace.attachments.forEach(attachment => {
+      const originalKey = originalAttachments.get(attachment.path);
+      const currentKey = `${attachment.sha}:${attachment.size}:${attachment.deleted ? 'deleted' : 'present'}`;
 
-    return Array.from(new Set([...cardFiles, ...attachmentFiles]));
+      if (attachment.dirty || originalKey !== currentKey) {
+        if (originalKey === undefined) {
+          attachmentFiles.push({ path: attachment.path, type: 'added' });
+        } else if (attachment.deleted) {
+          attachmentFiles.push({ path: attachment.path, type: 'deleted' });
+        } else {
+          attachmentFiles.push({ path: attachment.path, type: 'modified' });
+        }
+      }
+    });
+
+    return [...cardFiles, ...attachmentFiles].sort((left, right) => left.path.localeCompare(right.path, 'zh-CN'));
   }, [originalWorkspace, workspace]);
   const diagnostics = useMemo<DraftWorkspaceDiagnostics>(() => ({
     selectedCardId,
@@ -1047,12 +1073,21 @@ export function useDraftWorkspace(): DraftWorkspaceController {
 
   function addCard(cardData?: Partial<CardFrontmatter>): void {
     if (!workspace) return;
+    
+    // Formatter generator for Local timezone 'YYYY-MM-DD HH:mm:ss'
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const offset = -now.getTimezoneOffset();
+    const sign = offset >= 0 ? '+' : '-';
+    const absOffset = Math.abs(offset);
+    const localTime = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}${sign}${pad(Math.floor(absOffset / 60))}:${pad(absOffset % 60)}`;
+
     const newId = `new-card-${Date.now()}`;
     const data: CardFrontmatter = {
       id: newId,
       school_slug: 'all',
       title: '新建卡片',
-      published: 'false',
+      published: localTime,
       created_at: new Date().toISOString(),
       ...cardData,
     };
@@ -1060,7 +1095,7 @@ export function useDraftWorkspace(): DraftWorkspaceController {
     // Convert to CardDocument
     const newCard: CardDocument = {
       id: newId,
-      path: `content/cards/${newId}.md`,
+      path: `content/card/${newId}.md`,
       sha: '',
       raw: '---\n---\n',
       frontmatterText: '---\n---\n',
@@ -1167,7 +1202,9 @@ export function useDraftWorkspace(): DraftWorkspaceController {
 
     try {
       const originalByPath = new Map(originalWorkspace.cards.map((card) => [card.path, card.raw]));
-      const changes: PublishChange[] = workspace.cards.flatMap((card) => {
+      const currentByPath = new Map(workspace.cards.map((card) => [card.path, card.raw]));
+
+      const upserts: PublishChange[] = workspace.cards.flatMap((card) => {
         if (originalByPath.get(card.path) === card.raw) {
           return [];
         }
@@ -1179,6 +1216,20 @@ export function useDraftWorkspace(): DraftWorkspaceController {
           content: card.raw,
         } satisfies PublishChange];
       });
+
+      const deletions: PublishChange[] = originalWorkspace.cards.flatMap((card) => {
+        if (!currentByPath.has(card.path)) {
+          return [{
+            path: card.path,
+            operation: 'delete',
+            encoding: 'utf-8',
+          } satisfies PublishChange];
+        }
+        return [];
+      });
+
+      const changes: PublishChange[] = [...upserts, ...deletions];
+
       const attachmentChanges: PublishChange[] = workspace.attachments.flatMap<PublishChange>((attachment) => {
         if (attachment.deleted) {
           return [{

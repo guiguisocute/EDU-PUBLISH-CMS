@@ -141,6 +141,19 @@ export const AppShell: React.FC<{
     const saved = localStorage.getItem('desktop-view-mode');
     return saved === 'grid' ? 'grid' : 'list';
   });
+
+  React.useEffect(() => {
+    const handleResize = () => {
+      const isDesktop = window.innerWidth >= 1024;
+      setIsSidebarOpen(isDesktop);
+      setIsRightSidebarOpen(isDesktop);
+    };
+    // Initialize on mount in case it changed since initial state
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const [loadingFeedId, setLoadingFeedId] = React.useState<string | null>(null);
   const [leftWidgetDrawerOpen, setLeftWidgetDrawerOpen] = React.useState(false);
   const [rightWidgetDrawerOpen, setRightWidgetDrawerOpen] = React.useState(false);
@@ -219,6 +232,9 @@ export const AppShell: React.FC<{
 
   const handleFeedSelect = React.useCallback((meta: FeedMeta) => {
     const isReselectingCurrent = selectedFeedMeta?.id === meta.id;
+    if (window.innerWidth < 1024) {
+      setIsSidebarOpen(false);
+    }
     setLoadingFeedId(meta.id);
     setTimeout(() => {
       setLoadingFeedId(null);

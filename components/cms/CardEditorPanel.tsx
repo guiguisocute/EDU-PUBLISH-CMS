@@ -25,6 +25,7 @@ export interface CardEditorPanelProps {
   workspaceRepo?: RepoRef | null;
   workspaceBranch?: string | null;
   workspaceAttachments?: WorkspaceAttachmentFile[];
+  isDarkMode?: boolean;
 }
 
 function normalizeAttachmentRows(
@@ -251,6 +252,7 @@ export function CardEditorPanel({
   workspaceRepo,
   workspaceBranch,
   workspaceAttachments,
+  isDarkMode = false,
 }: CardEditorPanelProps) {
   const [attachmentRows, setAttachmentRows] = useState<AttachmentRow[]>(() =>
     normalizeAttachmentRows(card?.data.attachments),
@@ -342,7 +344,6 @@ export function CardEditorPanel({
         <div className="flex justify-between items-start">
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <span className="flex items-center justify-center bg-primary/10 text-primary h-6 px-2 rounded font-bold text-[10px] tracking-wider uppercase ring-1 ring-primary/20">内容编辑器</span>
               <p className="text-xs text-muted-foreground font-mono bg-muted/40 px-2 py-0.5 rounded border">{card.path}</p>
             </div>
             <h2 className="text-3xl font-black tracking-tight text-foreground">{String(card.data.title ?? '').trim() || card.id || '无标题记录'}</h2>
@@ -412,7 +413,29 @@ export function CardEditorPanel({
         </label>
 
         <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-bold text-muted-foreground">发布时间 (Published)</span>
+          <div className="flex justify-between items-center group">
+            <span className="text-xs font-bold text-muted-foreground">发布时间 (Published)</span>
+            <button
+              type="button"
+              className="flex items-center justify-center p-1 text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors border bg-muted/30 shadow-sm"
+              title="填入当前时间"
+              onClick={() => {
+                const now = new Date();
+                const pad = (n: number) => String(n).padStart(2, '0');
+                const offset = -now.getTimezoneOffset();
+                const sign = offset >= 0 ? '+' : '-';
+                const absOffset = Math.abs(offset);
+                const localTime = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}${sign}${pad(Math.floor(absOffset / 60))}:${pad(absOffset % 60)}`;
+                onFieldChange('published', localTime);
+              }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                <path d="M3 3v5h5"/>
+                <path d="M12 7v5l4 2"/>
+              </svg>
+            </button>
+          </div>
           <input
             className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             aria-label="Published"
@@ -711,7 +734,7 @@ export function CardEditorPanel({
           <span>Markdown 正文内容 (Body)</span>
           <span className="px-2 py-0.5 rounded bg-muted text-[10px]">MD Editor</span>
         </span>
-        <div data-color-mode="light" className="w-full rounded-md border shadow-sm overflow-hidden focus-within:ring-1 focus-within:ring-ring transition-shadow [&_.w-md-editor]:!border-0 [&_.w-md-editor]:!shadow-none [&_.w-md-editor-toolbar]:!bg-muted/40 [&_.w-md-editor-toolbar]:!border-b [&_.w-md-editor-toolbar]:!border-input">
+        <div data-color-mode={isDarkMode ? 'dark' : 'light'} className="w-full rounded-md border shadow-sm overflow-hidden focus-within:ring-1 focus-within:ring-ring transition-shadow [&_.w-md-editor]:!border-0 [&_.w-md-editor]:!shadow-none [&_.w-md-editor-toolbar]:!bg-muted/40 [&_.w-md-editor-toolbar]:!border-b [&_.w-md-editor-toolbar]:!border-input">
           <MDEditor
             value={card.bodyMarkdown}
             onChange={(value) => onBodyChange(value ?? '')}

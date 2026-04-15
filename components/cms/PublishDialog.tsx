@@ -1,9 +1,10 @@
 import type { ValidationIssue } from '../../types/content';
 import type { PublishResult } from '../../types/github';
+import type { FileChangeInfo } from '../../hooks/use-draft-workspace';
 
 export interface PublishDialogProps {
   isOpen: boolean;
-  changedFiles: string[];
+  changedFiles: FileChangeInfo[];
   baseBranch: string;
   targetBranch: string;
   baseHeadSha: string;
@@ -94,10 +95,16 @@ export function PublishDialog({
                 <p className="text-sm text-muted-foreground italic">没有可发布的本地文件更改。</p>
               ) : (
                 <ul className="text-xs font-mono bg-muted/20 border rounded-md p-3 max-h-[150px] overflow-y-auto flex flex-col gap-1.5">
-                  {changedFiles.map((file) => (
-                    <li key={file} className="truncate text-muted-foreground flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0"></span>
-                      {file}
+                  {changedFiles.map((change) => (
+                    <li key={change.path} className="truncate text-muted-foreground flex items-center gap-2">
+                      {change.type === 'added' ? (
+                        <span className="text-[10px] w-12 text-center bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 py-0.5 rounded uppercase font-bold shrink-0">新增</span>
+                      ) : change.type === 'deleted' ? (
+                        <span className="text-[10px] w-12 text-center bg-destructive/10 text-destructive border border-destructive/20 py-0.5 rounded uppercase font-bold shrink-0">删除</span>
+                      ) : (
+                        <span className="text-[10px] w-12 text-center bg-amber-500/10 text-amber-600 border border-amber-500/20 py-0.5 rounded uppercase font-bold shrink-0">修改</span>
+                      )}
+                      <span className={change.type === 'deleted' ? 'line-through opacity-70' : ''}>{change.path}</span>
                     </li>
                   ))}
                 </ul>

@@ -83,7 +83,7 @@ export function LiveInlinePreview({ article, preview }: LiveInlinePreviewProps) 
   }, [article?.pubDate]);
 
   const sourceChannelText = `[${article?.schoolShortName || '未知学院'}]${article?.source?.channel || article?.feedTitle || '未知来源'}`;
-  const sourceSenderText = article?.source?.sender || '网络信息中心';
+  const sourceSenderText = article?.source?.sender || '未知发布者';
 
   if (!article) {
     return (
