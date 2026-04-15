@@ -136,11 +136,12 @@ export const ArticleCard: React.FC<ArticleCardProps> = React.memo(({
 
 
   const pinnedLabel = useMemo(() => {
-
-
     if (!article.pinned) return '';
     if (isAllSchoolsView && article.schoolSlug && article.schoolSlug !== 'unknown') {
-      const shortName = String(article.schoolShortName || article.feedTitle || '').trim();
+      let shortName = String(article.schoolShortName || article.feedTitle || '').trim();
+      if (shortName.startsWith('/') || shortName.includes('.svg') || shortName.startsWith('http')) {
+        shortName = '';
+      }
       return `${shortName || '该院'}置顶`;
     }
     return '置顶';
