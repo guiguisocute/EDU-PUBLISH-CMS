@@ -188,7 +188,7 @@ function buildDerivedWorkspaceAssetCandidatePaths(path: string): string[] {
 export function buildWorkspaceAssetCandidatePaths(url: string, basePath: string): string[] {
   const rawUrl = String(url || '').trim();
 
-  if (!rawUrl || isExternalUrl(rawUrl) || isWorkspaceBlobUrl(rawUrl) || rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) {
+  if (!rawUrl || rawUrl === '/default-placeholder.svg' || isExternalUrl(rawUrl) || isWorkspaceBlobUrl(rawUrl) || rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) {
     return [];
   }
 
@@ -299,7 +299,7 @@ export function resolveWorkspaceAssetDownloadUrl(
 ): string {
   const rawUrl = String(url || '').trim();
 
-  if (!rawUrl || isExternalUrl(rawUrl) || isWorkspaceBlobUrl(rawUrl) || rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) {
+  if (!rawUrl || rawUrl === '/default-placeholder.svg' || isExternalUrl(rawUrl) || isWorkspaceBlobUrl(rawUrl) || rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) {
     return rawUrl;
   }
 
@@ -342,7 +342,7 @@ export function resolveWorkspaceAssetUrl(
 ): string {
   const rawUrl = String(url || '').trim();
 
-  if (!rawUrl || isExternalUrl(rawUrl) || isWorkspaceBlobUrl(rawUrl) || rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) {
+  if (!rawUrl || rawUrl === '/default-placeholder.svg' || isExternalUrl(rawUrl) || isWorkspaceBlobUrl(rawUrl) || rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) {
     return rawUrl;
   }
 

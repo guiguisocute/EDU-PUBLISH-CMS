@@ -154,7 +154,7 @@ export function RepoSelector({
                 className="inline-flex h-8 items-center rounded-md border border-border/70 bg-background px-3 text-xs font-semibold text-muted-foreground shadow-sm hover:bg-muted"
                 onClick={onSkipAssetSync}
               >
-                跳过，按旧逻辑继续
+                跳过
               </button>
             </div>
           ) : null}

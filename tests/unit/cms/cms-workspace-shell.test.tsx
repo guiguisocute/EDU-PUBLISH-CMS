@@ -168,7 +168,7 @@ describe('CmsWorkspaceShell', () => {
 
     render(<CmsWorkspaceShell />);
 
-    expect(await screen.findByText('等待你决定是否同步图片与附件后，再渲染即时预览。')).toBeInTheDocument();
+    expect(await screen.findByText('等待后续决定中……')).toBeInTheDocument();
     expect(screen.getAllByText('卡片元数据已读取，请先选择是否继续同步图片与附件。').length).toBeGreaterThan(0);
     expect(screen.queryByText('LiveInlinePreview:First notice')).not.toBeInTheDocument();
     expect(screen.queryByText('CardEditorPanel')).not.toBeInTheDocument();

@@ -112,7 +112,7 @@ describe('RepoSelector', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: '继续同步资源' }));
-    fireEvent.click(screen.getByRole('button', { name: '跳过，按旧逻辑继续' }));
+    fireEvent.click(screen.getByRole('button', { name: '跳过' }));
 
     expect(onContinueAssetSync).toHaveBeenCalledTimes(1);
     expect(onSkipAssetSync).toHaveBeenCalledTimes(1);

@@ -157,7 +157,7 @@ export function CmsWorkspaceShell() {
   }, [workspace.workspace?.cards, searchQuery, sortParam, workspace.compileResult.preview?.schoolNameBySlug]);
 
   const previewBlockMessage = workspace.workspaceLoadProgress?.phase === 'confirm'
-    ? '等待你决定是否同步图片与附件后，再渲染即时预览。'
+    ? '等待后续决定中……'
     : workspace.workspaceLoadProgress?.phase === 'assets'
       ? '正在同步图片与附件资源，完成后会重新渲染即时预览。'
       : '';
