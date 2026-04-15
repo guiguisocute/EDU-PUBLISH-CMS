@@ -248,6 +248,17 @@ export const NoticeDetailModal: React.FC<NoticeDetailModalProps> = React.memo(({
                   {article.aiCategory && (
                     <span className="text-[10px] md:text-[11px] bg-primary text-primary-foreground px-1.5 md:px-2 py-0.5 md:py-1 rounded border border-primary/80 font-semibold">{article.aiCategory}</span>
                   )}
+                  {article.pinned && (
+                    <span className="text-[10px] md:text-[11px] bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 px-1.5 md:px-2 py-0.5 md:py-1 rounded border border-amber-300 dark:border-amber-800/50 shadow-sm font-semibold">
+                      {(() => {
+                        let shortName = String(article.schoolShortName || article.feedTitle || '').trim();
+                        if (shortName.startsWith('/') || shortName.includes('.svg') || shortName.startsWith('http')) {
+                          shortName = '';
+                        }
+                        return `${shortName || '该院'}置顶`;
+                      })()}
+                    </span>
+                  )}
                   {(article.tags || []).filter((tag) => String(tag).trim() !== '学院通知').map((tag) => (
                     <span key={tag} className="text-[10px] md:text-[11px] bg-muted text-foreground px-1.5 md:px-2 py-0.5 md:py-1 rounded border">#{tag}</span>
                   ))}

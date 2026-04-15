@@ -138,7 +138,18 @@ export function LiveInlinePreview({ article, preview }: LiveInlinePreviewProps) 
               {article.aiCategory}
             </span>
           )}
-          {article.badge && (
+          {article.pinned && (
+            <span className="text-[12px] bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 px-2.5 py-0.5 rounded border border-amber-300 dark:border-amber-800/50 shadow-sm font-semibold tracking-wide leading-relaxed">
+              {(() => {
+                let shortName = String(article.schoolShortName || article.feedTitle || '').trim();
+                if (shortName.startsWith('/') || shortName.includes('.svg') || shortName.startsWith('http')) {
+                  shortName = '';
+                }
+                return `${shortName || '该院'}置顶`;
+              })()}
+            </span>
+          )}
+          {article.badge && !article.badge.startsWith('/') && !article.badge.includes('.svg') && !article.badge.startsWith('http') && (
             <span className="text-[12px] bg-orange-50 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 px-2.5 py-0.5 rounded border border-orange-200 dark:border-orange-800/50 shadow-sm font-semibold tracking-wide leading-relaxed">
               {article.badge}
             </span>
